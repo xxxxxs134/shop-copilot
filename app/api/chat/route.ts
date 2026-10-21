@@ -22,20 +22,13 @@ const SYSTEM_PROMPT = [
 ].join('\n');
 
 /**
- * 聊天接口：接收前端消息流，调用 DeepSeek 并以 SSE 流式返回
+ * 聊天接口：接收前端消息流 → 调用 Python FastAPI 接入层 → AI SDK 流式返回
  *
  * 错误处理策略（AI 安全可控要求）：
- * - 缺少 API Key：返回 400 + 明确中文提示，前端展示而非白屏
+ * - DeepSeek 密钥/上游错误由 FastAPI 返回 JSON 错误，经 AI SDK 透传到前端展示
  * - 请求体非法：返回 400
  */
 export async function POST(req: Request) {
-  if (!process.env.DEEPSEEK_API_KEY) {
-    return Response.json(
-      { error: '缺少 DEEPSEEK_API_KEY，请在 .env.local 中配置后重启开发服务器' },
-      { status: 400 },
-    );
-  }
-
   let messages: UIMessage[];
   try {
     const body = await req.json();

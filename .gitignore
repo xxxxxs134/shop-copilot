@@ -6,9 +6,16 @@ build/
 *.tsbuildinfo
 next-env.d.ts
 
-# 环境变量（真实密钥只放 .env.local，禁止入库）
+# 环境变量（真实密钥只放各自 .env 文件，禁止入库）
 .env
 .env*.local
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
 
 # 日志与系统文件
 *.log

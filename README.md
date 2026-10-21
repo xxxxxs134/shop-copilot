@@ -4,23 +4,24 @@
 
 ## 技术栈
 
-- **框架**：Next.js 14+（App Router）+ TypeScript
-- **AI**：Vercel AI SDK + DeepSeek API（OpenAI 兼容协议）
-- **样式**：Tailwind CSS
+- **前端**：Next.js 14+（App Router）+ TypeScript + Tailwind CSS + Vercel AI SDK
+- **后端 AI 接入层**：Python 3 + FastAPI（OpenAI 兼容接口，流式中转 DeepSeek）
 - **工程质量**：ESLint + Prettier
 
 ## 快速开始
 
+需要两个终端分别启动前端与 Python AI 层：
+
 ```bash
-# 1. 安装依赖
+# ── 终端 1：Python AI 接入层 ──
+cd backend
+pip install -r requirements.txt
+copy .env.example .env        # 编辑 .env，填入 DEEPSEEK_API_KEY
+uvicorn main:app --port 8000  # http://127.0.0.1:8000
+
+# ── 终端 2：Next.js 前端（项目根目录）──
 npm install
-
-# 2. 配置环境变量
-copy .env.example .env.local   # macOS/Linux: cp .env.example .env.local
-# 编辑 .env.local，填入 DEEPSEEK_API_KEY
-
-# 3. 启动开发服务器
-npm run dev
+npm run dev                   # http://localhost:3000
 ```
 
 打开 http://localhost:3000 即可对话。
@@ -28,14 +29,18 @@ npm run dev
 ## 项目结构
 
 ```
+backend/
+  main.py               # FastAPI：/v1/chat/completions 流式中转 DeepSeek
+  requirements.txt      # Python 依赖
+  .env.example          # 密钥模板（真实 .env 不入库）
 app/
-  api/chat/route.ts    # 聊天接口（streamText 流式响应）
-  page.tsx             # 首页
+  api/chat/route.ts     # 聊天接口（streamText，指向 FastAPI）
+  page.tsx              # 首页
 components/
-  ChatWindow.tsx       # 聊天主窗口（流式渲染/状态/错误处理）
-  MessageBubble.tsx    # 消息气泡
+  ChatWindow.tsx        # 聊天主窗口（流式渲染/状态/错误处理）
+  MessageBubble.tsx     # 消息气泡
 lib/
-  ai.ts                # DeepSeek provider 实例
+  ai.ts                 # AI provider（baseURL 可配置，默认本地 FastAPI）
 ```
 
 ## 开发计划

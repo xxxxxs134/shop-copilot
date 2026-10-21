@@ -28,9 +28,11 @@
 
 | 层 | 选型 | 备注 |
 |---|---|---|
-| 框架 | Next.js 14+ (App Router) + TypeScript | 官方推荐首选 |
+| 前端 | Next.js 14+ (App Router) + TypeScript | 官方推荐首选；只做界面与协议转换 |
 | UI | Tailwind CSS + shadcn/ui + Framer Motion | |
-| AI SDK | Vercel AI SDK | 流式 + Tool Calling |
+| 前端 AI SDK | Vercel AI SDK | 流式 + Tool Calling |
+| **后端 AI 层** | **Python 3 + FastAPI（uvicorn）** | 比赛定位「后端仅作 AI 能力接入层」；RAG/Agent/MCP 全长在这层 |
+| 后端对接 | FastAPI 暴露 OpenAI 兼容接口 `/v1/chat/completions` | Next.js provider baseURL 指向 FastAPI，协议边界不变 |
 | 文本 LLM | DeepSeek API（OpenAI 兼容） | `https://api.deepseek.com` |
 | 视觉 | 智谱 GLM-4V-Flash（免费） | DeepSeek 无视觉能力 |
 | 向量 | SiliconFlow BGE-M3（免费） | DeepSeek 无 embedding |
@@ -43,7 +45,8 @@
 | 版本 | Git + GitHub/Gitee 公开仓库 | |
 
 **API 成本预算**：≈0 元（DeepSeek 极低成本 + 其余全免费）。
-**红线**：任何密钥只进 `.env.local`（gitignored），仓库只有 `.env.example`。
+**红线**：任何密钥只进 gitignored 的 env 文件（前端 `.env.local` / 后端 `backend/.env`），仓库只有 `.env.example`。
+**架构原则**：前端 Next.js 不直接调用任何 AI API；一切 AI 能力经 Python FastAPI 接入层中转（对应比赛规则「后端服务仅作为AI能力的接入层」）。
 
 ---
 
@@ -53,11 +56,12 @@
 
 **做什么**
 - [x] 写本计划文档
-- [ ] Next.js 脚手架：TypeScript + Tailwind + App Router + ESLint/Prettier
-- [ ] `git init` + 首次提交
-- [ ] DeepSeek 接入：`/api/chat` 用 Vercel AI SDK `streamText`
-- [ ] 聊天页面：消息列表 + 输入框 + 流式打字机渲染 + 加载/错误状态
-- [ ] `.env.example`（`DEEPSEEK_API_KEY=`）+ README 骨架
+- [x] Next.js 脚手架：TypeScript + Tailwind + App Router + ESLint/Prettier
+- [x] `git init` + 语义化提交
+- [x] 聊天页面：消息列表 + 输入框 + 流式打字机渲染 + 加载/错误状态（代码完成）
+- [x] `.env.example` + README 骨架
+- [ ] **M0b-Python**：FastAPI 后端（OpenAI 兼容 `/v1/chat/completions` 流式中转 DeepSeek）
+- [ ] 前端 provider baseURL 切换为 FastAPI（`AI_BASE_URL` 环境变量，默认 `http://127.0.0.1:8000/v1`）
 
 **如何检查（逐条执行并记录结果）**
 ```bash
@@ -77,9 +81,16 @@ npm run build                   # 退出码 0，无 error
 npm run dev                     # 另开窗口：
 curl http://localhost:3000      # HTTP 200，返回 HTML
 
-# C6 真实对话可用（需在 .env.local 填入 DEEPSEEK_API_KEY）
+# C6 真实对话可用（需在 backend/.env 填入 DEEPSEEK_API_KEY）
+# 先起后端：uvicorn backend.main:app --port 8000
+# 再起前端：npm run dev
 # 手动：浏览器打开 localhost:3000，发送"你好"，
 # 期望：回答逐字流式出现（不是一次性蹦出）；断网/错 key 时报错提示优雅不白屏
+
+# C6b Python 后端自检
+curl http://127.0.0.1:8000/health                     # HTTP 200 {"status":"ok"}
+curl -X POST http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d "{\"model\":\"deepseek-chat\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}"
+# 无 key 时返回 400 中文提示；有 key 时返回 SSE 流
 
 # C7 Git 规范
 git log --oneline               # ≥3 条有语义的提交（脚手架/聊天API/聊天UI 分开）

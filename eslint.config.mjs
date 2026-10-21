@@ -1,13 +1,15 @@
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
+import nextVitals from 'eslint-config-next/core-web-vitals';
+import nextTs from 'eslint-config-next/typescript';
+import prettier from 'eslint-config-prettier';
 
-const compat = new FlatCompat({
-  baseDirectory: dirname(fileURLToPath(import.meta.url)),
-});
-
+/**
+ * ESLint 9 原生 flat config。
+ * eslint-config-next@16 直接导出 flat 配置数组，无需 FlatCompat 桥接。
+ */
 const eslintConfig = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript', 'prettier'),
+  ...nextVitals,
+  ...nextTs,
+  prettier,
   { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts'] },
 ];
 

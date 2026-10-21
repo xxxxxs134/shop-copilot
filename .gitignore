@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# 环境变量（真实密钥只放 .env.local，禁止入库）
+.env
+.env*.local
+
+# 日志与系统文件
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/

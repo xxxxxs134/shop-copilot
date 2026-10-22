@@ -35,7 +35,7 @@
 | 后端对接 | FastAPI 暴露 OpenAI 兼容接口 `/v1/chat/completions` | Next.js provider baseURL 指向 FastAPI，协议边界不变 |
 | 文本 LLM | DeepSeek API（OpenAI 兼容） | `https://api.deepseek.com` |
 | 视觉 | 智谱 GLM-4V-Flash（免费） | DeepSeek 无视觉能力 |
-| 向量 | SiliconFlow BGE-M3（免费） | DeepSeek 无 embedding |
+| 向量 | 本地 fastembed BGE-small-zh（默认，零密钥）/ SiliconFlow BGE-M3（key 后补升级） | DeepSeek 无 embedding |
 | 向量库 | LanceDB 嵌入式 | 零部署 |
 | 语音 | Web Speech API（浏览器端，免费） | |
 | 图表 | ECharts | Agent 生成式 UI |
@@ -106,26 +106,26 @@ grep -r "sk-" --include="*.*" . --exclude-dir=node_modules # 只允许出现在 
 ### M1 — RAG 知识库（D3-D10，W2）
 
 **做什么**
-- [ ] 语料收集：平台规则 / 运营方法论 / 行业公开报告，300-500 篇精选，存 `data/raw/`
-- [ ] 处理管线：清洗 → 按标题+段落分块（512 token，128 overlap）
-- [ ] 向量化：SiliconFlow BGE-M3 → 写入 LanceDB（`data/index/`）
-- [ ] 检索 API：向量检索 + 关键词检索（混合）→ 简单重排 → top-k
-- [ ] 问答接入：检索结果注入 Prompt，回答带 `[1][2]` 引用角标
-- [ ] **对比测试**：固定 20 个问题，"开 RAG vs 关 RAG"人工/自动打分，结果存 `docs/rag-eval.md`
+- [ ] 语料收集：M1 首批种子 40 篇（平台规则/方法论，`data/raw/*.md`），后续扩到 300-500 篇
+- [ ] 处理管线（Python）：清洗 → 按标题+段落分块（≈512 token，128 overlap）
+- [ ] 向量化：fastembed BGE-small-zh 本地默认（`EMBED_PROVIDER=siliconflow` 时切 BGE-M3）→ 写入 LanceDB（`data/index/`）
+- [ ] 检索 API（Python）：向量检索 + BM25 关键词检索（RRF 融合）→ top-k
+- [ ] 问答接入：FastAPI 检索结果注入 system prompt，回答带 `[1][2]` 引用角标（RAG 可开关）
+- [ ] **对比测试**：固定 20 个问题，"开 RAG vs 关 RAG"自动打分，结果存 `docs/rag-eval.md`
 
 **如何检查**
 ```bash
 # C8 索引构建可复现（从零重建一次成功）
-rm -rf data/index && npm run rag:index    # 退出码 0，index 文件数 > 0
+Remove-Item -Recurse -Force data\index; python -m backend.rag.pipeline build   # 退出码 0，index 文件数 > 0
 
 # C9 检索质量：自测 10 条查询，top-3 相关率 ≥ 8/10
-npm run rag:test                           # 输出测试报告，无异常
+python -m backend.rag.selftest                          # 输出测试报告，无异常
 
 # C10 RAG 效果可证明（评分关键证据）
-# docs/rag-eval.md 中：20 问题对比表，有 RAG 组"正确/有依据"比例显著高于无 RAG 组
+python -m backend.rag.eval                              # 生成 docs/rag-eval.md：20 问题对比表，有 RAG 组显著高于无 RAG 组
 
 # C11 引用可溯源：回答中的 [1] 角标能对应到知识库原文段落
-# 手动：问"保证金规则"，回答带引用，点击/展示原文片段
+# 手动：问"保证金规则"，回答带引用，可对照知识库原文片段
 
 # C12 回归：M0 的 C1-C7 仍全绿（不破坏已有功能）
 ```

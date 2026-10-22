@@ -5,11 +5,11 @@
 - 对前端暴露 OpenAI 兼容接口 /v1/chat/completions，流式中转 DeepSeek
 - 后续里程碑的 RAG 检索、Agent 工具、MCP、视觉模型全部挂在这一层
 
-运行：
-  cd backend
-  pip install -r requirements.txt
-  copy .env.example .env   # 填入 DEEPSEEK_API_KEY
-  uvicorn backend.main:app --port 8000   # 在项目根目录执行，或 python -m uvicorn main:app --port 8000（在 backend 目录内）
+运行（必须在项目根目录执行，backend 是 Python 包）：
+  pip install -r backend/requirements.txt
+  cp backend/.env.example backend/.env     # 填入 DEEPSEEK_API_KEY
+  python -m backend.rag.pipeline build     # 首次：构建知识库索引
+  uvicorn backend.main:app --port 8000
 """
 
 import os
@@ -21,11 +21,48 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from .rag.retrieve import retrieve
+
 # 读取 backend/.env 中的密钥（不进 git）
 load_dotenv(Path(__file__).parent / ".env")
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() not in ("0", "false", "no")
+
+
+def _last_user_text(messages: list) -> str | None:
+    """取最后一条 user 消息的纯文本（兼容 str 与 parts 两种 content 形态）。"""
+    for msg in reversed(messages):
+        if not isinstance(msg, dict) or msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        if isinstance(content, list):
+            parts = [
+                str(p.get("text", ""))
+                for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            ]
+            text = "".join(parts).strip()
+            if text:
+                return text
+    return None
+
+
+def _build_rag_system(hits) -> str:
+    """把检索命中拼成带编号的 system 上下文（C11 引用可溯源）。"""
+    lines = ["以下是内部知识库的检索结果，仅用于参考回答："]
+    for i, h in enumerate(hits, 1):
+        lines.append(
+            f"[{i}] 《{h.title}》（分类：{h.category}，来源：{h.source or '知识库'}）\n{h.text}"
+        )
+    lines.append(
+        "要求：引用依据时在句末标注 [1][2] 形式的角标；"
+        "如果检索结果不足以回答问题，请明确说明“知识库未覆盖”，不要编造。"
+    )
+    return "\n\n".join(lines)
 
 app = FastAPI(title="店智 Copilot AI 接入层", version="0.1.0")
 
@@ -50,8 +87,8 @@ async def chat_completions(request: Request):
     OpenAI 兼容的流式聊天中转。
 
     策略：
-    - 前端 Vercel AI SDK 发来的请求体原样透传（强制 stream=true）
-    - 本层不解析消息内容，只做密钥注入 + 流式字节转发（零额外延迟）
+    - 前端发来的请求体透传（强制 stream=true），额外做 RAG 检索注入
+    - RAG：命中知识库时前置 system 上下文（带 [1][2] 编号）；body.rag=false 可关闭
     - 上游非 200 时返回 JSON 错误（带中文说明），便于前端优雅展示
     """
     if not DEEPSEEK_API_KEY:
@@ -66,6 +103,15 @@ async def chat_completions(request: Request):
         return JSONResponse(status_code=400, content={"error": {"message": "请求体不是合法 JSON"}})
 
     payload["stream"] = True  # 前端 useChat 依赖流式
+
+    rag_flag = bool(payload.pop("rag", RAG_ENABLED))
+    messages = payload.get("messages")
+    if rag_flag and isinstance(messages, list):
+        query = _last_user_text(messages)
+        if query:
+            hits = retrieve(query)  # 索引缺失时内部降级为 []
+            if hits:
+                payload["messages"] = [{"role": "system", "content": _build_rag_system(hits)}] + messages
 
     client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0))
     try:

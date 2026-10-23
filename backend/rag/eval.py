@@ -80,7 +80,11 @@ def _collect_sse(text: str) -> str:
 def ask(question: str, rag: bool, timeout: float = 90.0) -> str:
     resp = httpx.post(
         API,
-        json={"messages": [{"role": "user", "content": question}], "rag": rag},
+        json={
+            "model": "deepseek-chat",
+            "messages": [{"role": "user", "content": question}],
+            "rag": rag,
+        },
         timeout=timeout,
     )
     resp.raise_for_status()
@@ -125,6 +129,19 @@ def _env_key() -> str:
     return os.getenv("DEEPSEEK_API_KEY", "")
 
 
+def _with_retry(fn, attempts: int = 3, base_sleep: float = 2.0):
+    """限流/瞬断重试（指数退避）。"""
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — 评测脚本需要兜底重试
+            last = exc
+            if i < attempts - 1:
+                time.sleep(base_sleep * (2**i))
+    raise last  # type: ignore[misc]
+
+
 def main() -> int:
     # 前置检查：服务器可达 + 裁判 key 存在
     try:
@@ -144,12 +161,12 @@ def main() -> int:
         a_rag, a_plain = "", ""
         err = ""
         try:
-            a_rag = ask(q, rag=True)
-            a_plain = ask(q, rag=False)
-            s_rag, r_rag = judge(q, a_rag)
-            s_plain, r_plain = judge(q, a_plain)
-        except Exception as exc:
-            err = str(exc)
+            a_rag = _with_retry(lambda: ask(q, rag=True))
+            a_plain = _with_retry(lambda: ask(q, rag=False))
+            s_rag, r_rag = _with_retry(lambda: judge(q, a_rag))
+            s_plain, r_plain = _with_retry(lambda: judge(q, a_plain))
+        except Exception as exc:  # noqa: BLE001 — 单题失败不影响整场
+            err = f"{type(exc).__name__}: {exc}"
             s_rag = s_plain = -1
             r_rag = r_plain = err[:80]
         rag_sum += max(s_rag, 0)

@@ -236,7 +236,7 @@ def build() -> int:
 def stats() -> int:
     provider = os.getenv("EMBED_PROVIDER", "local")
     index_dir = INDEX_ROOT / provider
-    if not (index_dir / "chunks").exists():
+    if not (index_dir / "chunks.lance").exists():
         print(f"[error] 索引不存在: {index_dir}（先执行 build）", file=sys.stderr)
         return 1
     import lancedb

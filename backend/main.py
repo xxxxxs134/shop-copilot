@@ -103,6 +103,8 @@ async def chat_completions(request: Request):
         return JSONResponse(status_code=400, content={"error": {"message": "请求体不是合法 JSON"}})
 
     payload["stream"] = True  # 前端 useChat 依赖流式
+    # 接入层兜底模型名（前端可不传，传了则以调用方为准）
+    payload.setdefault("model", os.getenv("DEEPSEEK_MODEL", "deepseek-chat"))
 
     rag_flag = bool(payload.pop("rag", RAG_ENABLED))
     messages = payload.get("messages")

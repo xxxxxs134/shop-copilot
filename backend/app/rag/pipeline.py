@@ -2,8 +2,8 @@
 RAG 索引管线：加载 → 清洗 → 分块 → 嵌入 → LanceDB
 
 用法（项目根目录执行）：
-  python -m backend.rag.pipeline build     # 全量重建索引（C8 可复现）
-  python -m backend.rag.pipeline stats     # 查看索引统计
+  python -m backend.app.rag.pipeline build     # 全量重建索引（C8 可复现）
+  python -m backend.app.rag.pipeline stats     # 查看索引统计
 
 环境变量：
   EMBED_PROVIDER=local|siliconflow   默认 local（fastembed BGE-small-zh，零密钥）
@@ -20,7 +20,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 INDEX_ROOT = PROJECT_ROOT / "data" / "index"
 
@@ -252,7 +252,7 @@ def main() -> int:
         return build()
     if cmd == "stats":
         return stats()
-    print(f"用法: python -m backend.rag.pipeline [build|stats]（未知命令: {cmd}）", file=sys.stderr)
+    print(f"用法: python -m backend.app.rag.pipeline [build|stats]（未知命令: {cmd}）", file=sys.stderr)
     return 2
 
 

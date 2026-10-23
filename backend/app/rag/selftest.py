@@ -2,7 +2,7 @@
 C9 检索质量自测：10 条查询，top-3 命中期望分类 ≥ 8/10 通过。
 
 用法（项目根目录）：
-  python -m backend.rag.selftest
+  python -m backend.app.rag.selftest
 """
 
 from __future__ import annotations

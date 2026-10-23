@@ -1,8 +1,8 @@
 """
 C10 RAG 对比评测：固定 20 问，开/关 RAG 各跑一遍，LLM 自动打分，产出 docs/rag-eval.md。
 
-用法（项目根目录，需先启动 uvicorn backend.main:app --port 8000）：
-  python -m backend.rag.eval
+用法（项目根目录，需先启动 uvicorn backend.app.main:app --port 8000）：
+  python -m backend.app.rag.eval
 
 评分标准（DeepSeek 裁判，0/1/2 分）：
   2 = 正确且有依据（或明确说明知识库未覆盖）
@@ -20,7 +20,7 @@ from pathlib import Path
 import httpx
 
 API = "http://127.0.0.1:8000/v1/chat/completions"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OUT_MD = PROJECT_ROOT / "docs" / "rag-eval.md"
 
 # 20 个固定问题（覆盖种子语料主要分类；e2e 后如发现偏差再校准）
@@ -123,7 +123,7 @@ def _env_key() -> str:
     from dotenv import load_dotenv
     from pathlib import Path as _P
 
-    load_dotenv(_P(__file__).resolve().parents[1] / ".env")
+    load_dotenv(_P(__file__).resolve().parents[2] / ".env")
     import os
 
     return os.getenv("DEEPSEEK_API_KEY", "")
@@ -148,7 +148,7 @@ def main() -> int:
         health = httpx.get("http://127.0.0.1:8000/health", timeout=5)
         health.raise_for_status()
     except Exception as exc:
-        print(f"[error] 后端不可达（先 uvicorn backend.main:app --port 8000）: {exc}", file=sys.stderr)
+        print(f"[error] 后端不可达（先 uvicorn backend.app.main:app --port 8000）: {exc}", file=sys.stderr)
         return 1
     if not _env_key():
         print("[error] backend/.env 缺少 DEEPSEEK_API_KEY", file=sys.stderr)

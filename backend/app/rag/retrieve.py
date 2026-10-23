@@ -86,7 +86,7 @@ class Retriever:
         self.provider = os.getenv("EMBED_PROVIDER", "local")
         index_dir = INDEX_ROOT / self.provider
         if not (index_dir / "chunks.lance").exists():
-            raise FileNotFoundError(f"索引不存在: {index_dir}（先执行 python -m backend.rag.pipeline build）")
+            raise FileNotFoundError(f"索引不存在: {index_dir}（先执行 python -m backend.app.rag.pipeline build）")
         self.top_k = top_k
         self._table = lancedb.connect(str(index_dir)).open_table("chunks")
         # 全量载入内存（种子规模 ≈百级块；扩到千级也够用）

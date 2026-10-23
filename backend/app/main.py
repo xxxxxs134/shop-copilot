@@ -8,8 +8,8 @@
 运行（必须在项目根目录执行，backend 是 Python 包）：
   pip install -r backend/requirements.txt
   cp backend/.env.example backend/.env     # 填入 DEEPSEEK_API_KEY
-  python -m backend.rag.pipeline build     # 首次：构建知识库索引
-  uvicorn backend.main:app --port 8000
+  python -m backend.app.rag.pipeline build  # 首次：构建知识库索引
+  uvicorn backend.app.main:app --port 8000
 """
 
 import os
@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .rag.retrieve import retrieve
 
 # 读取 backend/.env 中的密钥（不进 git）
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")

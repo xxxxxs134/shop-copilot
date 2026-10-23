@@ -16,8 +16,8 @@
 # ── 终端 1：Python AI 接入层（项目根目录执行）──
 pip install -r backend/requirements.txt
 cp backend/.env.example backend/.env    # 编辑 .env，填入 DEEPSEEK_API_KEY
-python -m backend.rag.pipeline build    # 首次：构建知识库索引
-uvicorn backend.main:app --port 8000    # http://127.0.0.1:8000
+python -m backend.app.rag.pipeline build  # 首次：构建知识库索引
+uvicorn backend.app.main:app --port 8000  # http://127.0.0.1:8000
 
 # ── 终端 2：Next.js 前端（项目根目录）──
 npm install

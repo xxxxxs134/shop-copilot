@@ -82,7 +82,7 @@ npm run dev                     # 另开窗口：
 curl http://localhost:3000      # HTTP 200，返回 HTML
 
 # C6 真实对话可用（需在 backend/.env 填入 DEEPSEEK_API_KEY）
-# 先起后端：uvicorn backend.main:app --port 8000
+# 先起后端：uvicorn backend.app.main:app --port 8000
 # 再起前端：npm run dev
 # 手动：浏览器打开 localhost:3000，发送"你好"，
 # 期望：回答逐字流式出现（不是一次性蹦出）；断网/错 key 时报错提示优雅不白屏
@@ -105,24 +105,24 @@ grep -r "sk-" --include="*.*" . --exclude-dir=node_modules # 只允许出现在 
 
 ### M1 — RAG 知识库（D3-D10，W2）
 
-**做什么**
-- [ ] 语料收集：M1 首批种子 40 篇（平台规则/方法论，`data/raw/*.md`），后续扩到 300-500 篇
-- [ ] 处理管线（Python）：清洗 → 按标题+段落分块（≈512 token，128 overlap）
-- [ ] 向量化：fastembed BGE-small-zh 本地默认（`EMBED_PROVIDER=siliconflow` 时切 BGE-M3）→ 写入 LanceDB（`data/index/`）
-- [ ] 检索 API（Python）：向量检索 + BM25 关键词检索（RRF 融合）→ top-k
-- [ ] 问答接入：FastAPI 检索结果注入 system prompt，回答带 `[1][2]` 引用角标（RAG 可开关）
-- [ ] **对比测试**：固定 20 个问题，"开 RAG vs 关 RAG"自动打分，结果存 `docs/rag-eval.md`
+**做什么**（✅ M1 已完成 2026-10-22，验收记录见 docs/rag-eval.md）
+- [x] 语料收集：M1 首批种子 40 篇（`data/raw/*.md`，10 类 × 4 篇）
+- [x] 处理管线（Python）：清洗 → 按标题+段落分块（≈512 token，128 overlap）
+- [x] 向量化：fastembed BGE-small-zh 本地默认（`EMBED_PROVIDER=siliconflow` 时切 BGE-M3）→ 写入 LanceDB（`data/index/`）
+- [x] 检索 API（Python）：向量检索 + BM25 关键词检索（RRF 融合）→ top-k
+- [x] 问答接入：FastAPI 检索结果注入 system prompt，回答带 `[1][2]` 引用角标（RAG 可开关）
+- [x] **对比测试**：20 问自动打分，结果存 `docs/rag-eval.md`（初版：有RAG 26 vs 无RAG 23/40；发现裸模型常识强，评测 v2 按引用有据性评分——见 docs/tech-plan.md D6）
 
 **如何检查**
 ```bash
 # C8 索引构建可复现（从零重建一次成功）
-Remove-Item -Recurse -Force data\index; python -m backend.rag.pipeline build   # 退出码 0，index 文件数 > 0
+Remove-Item -Recurse -Force data\index; python -m backend.app.rag.pipeline build   # 退出码 0，index 文件数 > 0
 
 # C9 检索质量：自测 10 条查询，top-3 相关率 ≥ 8/10
-python -m backend.rag.selftest                          # 输出测试报告，无异常
+python -m backend.app.rag.selftest                          # 输出测试报告，无异常
 
 # C10 RAG 效果可证明（评分关键证据）
-python -m backend.rag.eval                              # 生成 docs/rag-eval.md：20 问题对比表，有 RAG 组显著高于无 RAG 组
+python -m backend.app.rag.eval                              # 生成 docs/rag-eval.md：20 问题对比表，有 RAG 组显著高于无 RAG 组
 
 # C11 引用可溯源：回答中的 [1] 角标能对应到知识库原文段落
 # 手动：问"保证金规则"，回答带引用，可对照知识库原文片段

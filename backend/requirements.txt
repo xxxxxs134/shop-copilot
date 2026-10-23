@@ -5,3 +5,4 @@ python-dotenv>=1.0
 fastembed>=0.9
 lancedb>=0.40
 jieba>=0.42
+mcp>=1.0,<2

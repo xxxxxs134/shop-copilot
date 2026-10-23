@@ -201,3 +201,94 @@ async def agent_chat(request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ────────────────────────────── 多模态：图生文案 ──────────────────────────────
+
+VISION_MODEL = os.getenv("VISION_MODEL", "glm-4v-flash")
+VISION_BASE_URL = os.getenv("VISION_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+VISION_API_KEY = os.getenv("VISION_API_KEY", "")
+
+
+@app.post("/v1/vision/caption")
+async def vision_caption(request: Request):
+    """
+    商品图 → 文案（GLM-4V 视觉模型）。
+
+    请求体（二选一）：
+      {"image_url": "https://..."}          — 远程图片 URL
+      {"image_base64": "<base64 without prefix>"}  — 本地图片 base64
+
+    响应：
+      {"title": "...", "selling_points": ["...", "..."], "description": "..."}
+    """
+    if not VISION_API_KEY:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": "缺少 VISION_API_KEY（智谱 GLM-4V），请在 backend/.env 配置后重启后端"}},
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": {"message": "请求体不是合法 JSON"}})
+
+    image_url = body.get("image_url")
+    image_b64 = body.get("image_base64")
+    if not image_url and not image_b64:
+        return JSONResponse(status_code=400, content={"error": {"message": "需要 image_url 或 image_base64"}})
+
+    # 构造 GLM-4V 消息（OpenAI 兼容格式）
+    if image_url:
+        image_content = {"type": "image_url", "image_url": {"url": image_url}}
+    else:
+        image_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
+
+    payload = {
+        "model": VISION_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    image_content,
+                    {
+                        "type": "text",
+                        "text": "你是电商文案专家。根据这张商品图，生成：1) 商品标题（30字内，含核心卖点）；"
+                                "2) 3-5个卖点列表；3) 一句话短描述。用 JSON 格式返回，字段：title, selling_points, description。",
+                    },
+                ],
+            }
+        ],
+        "temperature": 0.7,
+    }
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+        try:
+            resp = await client.post(
+                f"{VISION_BASE_URL}/chat/completions",
+                json=payload,
+                headers={"Authorization": f"Bearer {VISION_API_KEY}"},
+            )
+        except httpx.HTTPError as exc:
+            return JSONResponse(status_code=502, content={"error": {"message": f"连接视觉模型失败: {exc}"}})
+
+    if resp.status_code != 200:
+        return JSONResponse(
+            status_code=resp.status_code,
+            content={"error": {"message": f"视觉模型返回 {resp.status_code}: {resp.text[:300]}"}},
+        )
+
+    data = resp.json()
+    content = data["choices"][0]["message"]["content"]
+    # 尝试解析 JSON（GLM-4V 可能包 ```json ... ```）
+    import json as _json
+    import re
+    m = re.search(r"\{.*\}", content, re.DOTALL)
+    if m:
+        try:
+            parsed = _json.loads(m.group(0))
+            return parsed
+        except _json.JSONDecodeError:
+            pass
+    # 解析失败时返回原文
+    return {"raw": content}

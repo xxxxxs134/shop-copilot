@@ -12,6 +12,7 @@
   uvicorn backend.app.main:app --port 8000
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .rag.retrieve import retrieve
+from .agent.loop import run_agent
 
 # 读取 backend/.env 中的密钥（不进 git）
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -155,3 +157,47 @@ async def chat_completions(request: Request):
             status_code=502,
             content={"error": {"message": f"连接 DeepSeek 失败: {exc}"}},
         )
+
+
+@app.post("/v1/agent/chat")
+async def agent_chat(request: Request):
+    """
+    Agent 模式 SSE 端点（P1）。
+
+    事件协议（SSE data 字段的 JSON）：
+      {"type":"step","tool":"...","args":{...}}            — 工具开始
+      {"type":"step_result","tool":"...","summary":"..."}  — 工具结果摘要
+      {"type":"delta","text":"..."}                        — 流式文本片段
+      {"type":"done","citations":[...]}                    — 结束
+      {"type":"error","message":"..."}                     — 错误
+    """
+    if not DEEPSEEK_API_KEY:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": "缺少 DEEPSEEK_API_KEY，请在 backend/.env 配置后重启后端"}},
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": {"message": "请求体不是合法 JSON"}})
+
+    user_text = (body.get("message") or "").strip()
+    if not user_text:
+        return JSONResponse(status_code=400, content={"error": {"message": "message 不能为空"}})
+
+    history = body.get("history") or []
+
+    async def event_stream():
+        try:
+            async for event in run_agent(user_text, history):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001 — 兜底，不让 SSE 中断
+            err = {"type": "error", "message": f"Agent 内部错误: {exc}"}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

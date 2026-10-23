@@ -7,6 +7,17 @@ import { MessageBubble } from './MessageBubble';
 import { AgentSteps, type AgentStep } from './AgentSteps';
 import { streamAgent } from '@/lib/agentClient';
 
+/** SpeechRecognition 最小接口（浏览器 API 无官方 TS 类型） */
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  onresult: (e: { results: Array<Array<{ transcript: string }>> }) => void;
+  onend: () => void;
+  onerror: () => void;
+  start: () => void;
+  stop: () => void;
+}
+
 /**
  * 聊天主窗口（客户端组件）
  *
@@ -31,7 +42,19 @@ export function ChatWindow() {
   const [agentError, setAgentError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const busy = mode === 'rag' ? ragBusy : agentStreaming;
+  // 多模态：语音输入 + 图片上传
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<{ start: () => void; stop: () => void } | null>(null);
+  const [visionLoading, setVisionLoading] = useState(false);
+  const [visionResult, setVisionResult] = useState<{
+    title?: string;
+    selling_points?: string[];
+    description?: string;
+    raw?: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const busy = mode === 'rag' ? ragBusy : agentStreaming || visionLoading;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -133,13 +156,78 @@ export function ChatWindow() {
     }
   }
 
+  // ── 语音输入（Web Speech API）──
+  function toggleVoice() {
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const SpeechRecognition =
+      (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('当前浏览器不支持语音识别，请使用 Chrome 或 Edge');
+      return;
+    }
+    const rec = new SpeechRecognition();
+    rec.lang = 'zh-CN';
+    rec.interimResults = false;
+    rec.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      setInput((prev) => (prev ? prev + transcript : transcript));
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  }
+
+  // ── 图片上传 → GLM-4V 文案 ──
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setVisionLoading(true);
+    setVisionResult(null);
+    try {
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          resolve(dataUrl.split(',')[1] ?? '');
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/vision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64: b64 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || data.message || `视觉模型返回 ${res.status}`);
+      }
+      setVisionResult(data);
+      // 把生成的标题填入输入框（用户可编辑后发送）
+      if (data.title) setInput(data.title);
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : '图片识别失败');
+    } finally {
+      setVisionLoading(false);
+      // 清空 file input 允许重复上传同一文件
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
   return (
     <div className="mx-auto flex h-screen w-full max-w-3xl flex-col px-4">
       {/* 顶栏 */}
       <header className="flex items-center justify-between border-b border-slate-200 py-4">
         <div>
           <h1 className="text-lg font-bold text-brand-700">店智 Copilot</h1>
-          <p className="text-xs text-slate-500">电商运营 AI 智能助手 · M1+ P1</p>
+          <p className="text-xs text-slate-500">电商运营 AI 智能助手 · M1+ P1+P2</p>
         </div>
         <div className="flex items-center gap-2">
           {/* 模式切换 */}
@@ -246,7 +334,58 @@ export function ChatWindow() {
 
       {/* 输入区 */}
       <form onSubmit={handleSubmit} className="border-t border-slate-200 py-4">
+        {/* 视觉识别结果预览 */}
+        {visionResult && (
+          <div className="mb-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs">
+            <p className="font-medium text-brand-700">🖼️ 图片识别结果</p>
+            {visionResult.title && <p className="mt-1 text-slate-700">标题：{visionResult.title}</p>}
+            {visionResult.selling_points && (
+              <ul className="mt-1 list-inside list-disc text-slate-600">
+                {visionResult.selling_points.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+            )}
+            {visionResult.description && <p className="mt-1 text-slate-600">描述：{visionResult.description}</p>}
+            {visionResult.raw && <p className="mt-1 text-slate-500">{visionResult.raw}</p>}
+            <button
+              type="button"
+              onClick={() => setVisionResult(null)}
+              className="mt-1 text-brand-600 underline underline-offset-2 hover:text-brand-800"
+            >
+              关闭
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 shadow-sm focus-within:border-brand-500">
+          {/* 图片上传按钮 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={visionLoading}
+            title="上传商品图，AI 生成文案"
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+          >
+            {visionLoading ? '⏳' : '🖼️'}
+          </button>
+          {/* 语音输入按钮 */}
+          <button
+            type="button"
+            onClick={toggleVoice}
+            title={listening ? '停止录音' : '语音输入'}
+            className={`rounded-lg p-2 ${
+              listening ? 'bg-red-100 text-red-600 animate-pulse' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+            }`}
+          >
+            {listening ? '🔴' : '🎤'}
+          </button>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

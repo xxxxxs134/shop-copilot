@@ -134,18 +134,18 @@ python -m backend.app.rag.eval                              # 生成 docs/rag-ev
 
 ### M2 — Agent + MCP + 多模态（D11-D18，W3）
 
-**做什么**
-- [ ] Agent 内核：Vercel AI SDK 多步工具循环（maxSteps），工具前 4 个：
+**做什么**（✅ M2 已完成 2026-10-24，实现口径见 docs/tech-plan.md D1-D5）
+- [x] Agent 内核：**Python 手写 ReAct 循环**（`backend/app/agent/loop.py`，DeepSeek function calling，MAX_STEPS=5），工具 4 个：
   - `kb_search`（M1 的 RAG 检索）
   - `data_query`（查预置店铺样例数据 → 返回结构化数据）
   - `copywriting`（商品文案生成）
   - `policy_check`（平台规则核查，内部走 kb_search）
-- [ ] 生成式图表：`data_query` 结果 → 前端 ECharts 渲染
-- [ ] MCP Server：独立包 `mcp-server/`，stdio/SSE 暴露 kb_search + data_query
-- [ ] 语音：Web Speech API 输入（STT）+ 回答播报（TTS），开关按钮
-- [ ] 图片识别：上传商品图 → GLM-4V-Flash → 识别描述 → 接入文案生成
-- [ ] Agent 思考可视化：工具调用过程逐步展开（UI 动画）
-- [ ] AI 安全：输入敏感词过滤、无检索依据时拒答话术、免责声明
+- [ ] 生成式图表：`data_query` 结果 → 前端 ECharts 渲染（未做，评估为低优先级）
+- [x] MCP Server：独立包 `backend/mcp_server/`（FastMCP stdio，复用 agent 工具注册表）
+- [x] 语音：Web Speech API 输入（STT）（TTS 播报未做）
+- [x] 图片识别：上传商品图 → GLM-4V → 识别描述 → 填入输入框（`/v1/vision/caption`）
+- [x] Agent 思考可视化：工具调用过程逐步展开（`components/AgentSteps.tsx` 步骤卡片）
+- [ ] AI 安全：输入敏感词过滤、无检索依据时拒答话术、免责声明（部分覆盖：RAG 提示词含"知识库未覆盖请明确说明"）
 
 **如何检查**
 ```bash
@@ -154,7 +154,7 @@ python -m backend.app.rag.eval                              # 生成 docs/rag-ev
 # 期望：界面依次显示 调用 data_query → 调用生成 → 输出含图表的周报
 
 # C14 MCP Server 可独立启动并被调用
-npx @modelcontextprotocol/inspector node mcp-server/index.js
+npx @modelcontextprotocol/inspector python -m backend.mcp_server
 # inspector 中调用 kb_search 返回检索结果
 
 # C15 语音：麦克风按钮 → 说出问题 → 文本进输入框；回答可点击播报

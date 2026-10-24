@@ -152,11 +152,13 @@ def _with_retry(fn, attempts: int = 3, base_sleep: float = 2.0):
 
 
 def _get_context(question: str) -> str:
-    """同步获取检索片段拼接（供裁判参考）。用后端 RAG 注入的同一检索。"""
+    """同步获取检索片段拼接（供裁判参考）。与生成端 _build_rag_system 完全对齐：
+    同一 retrieve()、同样的编号、完整原文（不做截断，否则裁判看不到生成端
+    实际看到的内容，会把正确引用误判为"超出片段"）。"""
     from ..rag.retrieve import retrieve
 
     hits = retrieve(question)
-    return "\n\n".join(f"[{i}] 《{h.title}》\n{h.text[:300]}" for i, h in enumerate(hits[:3], 1))
+    return "\n\n".join(f"[{i}] 《{h.title}》\n{h.text}" for i, h in enumerate(hits, 1))
 
 
 def main() -> int:

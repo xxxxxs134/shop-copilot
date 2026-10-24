@@ -1,12 +1,12 @@
 import { ChatWindow } from '@/components/ChatWindow';
 
 /**
- * 首页：M0 阶段只承载一个全屏聊天窗口
- * 后续里程碑会在此加入侧边栏（数据看板 / 知识库管理等入口）
+ * 首页：P4 起为「侧边栏 + 聊天窗口」双栏布局
+ * （Sidebar 由 ChatWindow 内部渲染，会话状态机同管）
  */
 export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex h-screen flex-col overflow-hidden">
       <ChatWindow />
     </main>
   );

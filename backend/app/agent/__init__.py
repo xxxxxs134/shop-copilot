@@ -45,30 +45,12 @@ register(Tool(
 
 # ────────────────────────────── data_query ─────────────────────────────
 
-# 预置样例店铺数据（P1 mock，M3 可替换为真实数据源）
-_MOCK_SHOP_DATA = {
-    "gmv": 12840.50,
-    "orders": 156,
-    "visitors": 3820,
-    "conversion_rate": 4.08,  # %
-    "avg_order_value": 82.31,
-    "refund_rate": 1.92,  # %
-    "top_products": [
-        {"name": "纯棉基础款T恤", "sales": 42, "gmv": 3360},
-        {"name": "便携式充电宝", "sales": 28, "gmv": 2800},
-        {"name": "桌面收纳盒", "sales": 35, "gmv": 1750},
-    ],
-    "traffic_sources": {"search": 52, "recommend": 28, "direct": 12, "paid": 8},
-}
+from .data_provider import snapshot_json
 
 
 def _data_query(query: str) -> str:
-    """查询预置店铺经营数据。P1 为 mock 数据。"""
-    return json.dumps({
-        "date": "2026-10-23",
-        "data": _MOCK_SHOP_DATA,
-        "note": "当前为样例数据，后续接入真实店铺数据源",
-    }, ensure_ascii=False)
+    """查询店铺经营数据 — 走 DataProvider 插件（默认 SQLite 真实 SQL，见 data_provider.py）。"""
+    return snapshot_json()
 
 
 register(Tool(

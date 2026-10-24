@@ -1,29 +1,44 @@
-import type { UIMessage } from 'ai';
+import { MarkdownText } from './MarkdownText';
+import { MessageActions } from './MessageActions';
 
 /**
- * 单条消息气泡
+ * 统一消息气泡（RAG / Agent 双模式共用）
  *
- * AI SDK v5 起消息内容以 parts 数组承载（而非单一 content 字符串），
- * 这里只渲染 text 类型 part，后续里程碑将扩展 tool-invocation / 图片等 part。
+ * 与旧版差异：入口从 UIMessage 改为 {role, text} —— 由 ChatWindow 负责抽取文本，
+ * assistant 侧接 MarkdownText（markdown 渲染 + [n] 角标）与 hover 操作条。
  */
-export function MessageBubble({ message }: { message: UIMessage }) {
-  const isUser = message.role === 'user';
+export function MessageBubble({
+  role,
+  text,
+  isLast,
+  busy,
+  onCite,
+  onRegenerate,
+}: {
+  role: 'user' | 'assistant';
+  text: string;
+  /** 是否为当前模式下的最后一条消息（决定是否显示「重新生成」） */
+  isLast: boolean;
+  /** 生成中：禁用重新生成 */
+  busy: boolean;
+  onCite: (n: number) => void;
+  onRegenerate: () => void;
+}) {
+  if (role === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2.5 text-sm text-white">
+          {text}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={
-          isUser
-            ? 'max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2.5 text-sm text-white'
-            : 'max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm'
-        }
-      >
-        {message.parts.map((part, i) => {
-          if (part.type === 'text') {
-            return <span key={`${message.id}-${i}`}>{part.text}</span>;
-          }
-          return null;
-        })}
+    <div className="group flex justify-start">
+      <div className="max-w-[80%] rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <MarkdownText text={text} onCite={onCite} />
+        <MessageActions text={text} isLast={isLast} disabled={busy} onRegenerate={onRegenerate} />
       </div>
     </div>
   );

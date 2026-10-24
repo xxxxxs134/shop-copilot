@@ -20,6 +20,10 @@ venv/
 # RAG 构建产物（可用 python -m backend.rag.pipeline build 重建，C8）
 data/index/
 
+# 本地数据库（会话 store / 店铺种子数据，可用 python -m backend.app.agent.seed_store 重建）
+data/app.db
+data/store.db
+
 # 日志与系统文件
 *.log
 npm-debug.log*

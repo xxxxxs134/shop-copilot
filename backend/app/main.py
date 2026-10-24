@@ -21,9 +21,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 from .rag.retrieve import retrieve
 from .agent.loop import run_agent
+from . import store
 
 # 读取 backend/.env 中的密钥（不进 git）
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -81,6 +83,104 @@ app.add_middleware(
 async def health() -> dict:
     """健康检查：前端/部署探活用"""
     return {"status": "ok", "deepseek_key_configured": bool(DEEPSEEK_API_KEY)}
+
+
+# ────────────────────────────── 会话持久化（P4 §3.1） ──────────────────────────────
+
+class SessionCreateBody(BaseModel):
+    title: str | None = None
+    mode: str = "rag"
+
+
+class SessionPatchBody(BaseModel):
+    title: str | None = None
+    mode: str | None = None  # 空会话切换 RAG/Agent 模式
+
+
+class SessionMessagesBody(BaseModel):
+    messages: list
+    title: str | None = None  # 首条消息时前端顺带传自动命名
+
+
+def _session_or_404(sid: str) -> dict:
+    sess = store.get_session(sid)
+    if sess is None:
+        raise _Http404("会话不存在")
+    return sess
+
+
+class _Http404(Exception):
+    def __init__(self, message: str):
+        self.message = message
+
+
+@app.exception_handler(_Http404)
+async def _http404_handler(_request: Request, exc: _Http404) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": {"message": exc.message}})
+
+
+@app.get("/v1/sessions")
+async def sessions_list() -> list[dict]:
+    """会话元数据列表（updated_at 降序）。"""
+    return store.list_sessions()
+
+
+@app.post("/v1/sessions", status_code=201)
+async def sessions_create(body: SessionCreateBody) -> dict:
+    if body.mode not in store.VALID_MODES:
+        return JSONResponse(status_code=400, content={"error": {"message": f"mode 必须是 {store.VALID_MODES}"}})
+    title = (body.title or "").strip() or "新对话"
+    return store.create_session(title, body.mode)
+
+
+@app.get("/v1/sessions/{sid}")
+async def sessions_get(sid: str) -> dict:
+    return _session_or_404(sid)
+
+
+@app.patch("/v1/sessions/{sid}")
+async def sessions_patch(sid: str, body: SessionPatchBody) -> dict:
+    _session_or_404(sid)
+    if body.title is None and body.mode is None:
+        return JSONResponse(status_code=400, content={"error": {"message": "title 或 mode 至少提供一个"}})
+    if body.mode is not None and body.mode not in store.VALID_MODES:
+        return JSONResponse(status_code=400, content={"error": {"message": f"mode 必须是 {store.VALID_MODES}"}})
+    if body.title is not None and not body.title.strip():
+        return JSONResponse(status_code=400, content={"error": {"message": "title 不能为空"}})
+    store.patch_session(sid, title=body.title, mode=body.mode)
+    return {"ok": True}
+
+
+@app.delete("/v1/sessions/{sid}")
+async def sessions_delete(sid: str) -> dict:
+    _session_or_404(sid)
+    store.delete_session(sid)
+    return {"ok": True}
+
+
+@app.put("/v1/sessions/{sid}/messages")
+async def sessions_put_messages(sid: str, body: SessionMessagesBody) -> dict:
+    _session_or_404(sid)
+    store.put_messages(sid, body.messages, title=body.title)
+    return {"ok": True}
+
+
+# ────────────────────────────── 引用溯源（P4 §3.2） ──────────────────────────────
+
+@app.get("/v1/rag/search")
+async def rag_search(q: str, k: int = 4) -> list[dict]:
+    """与生成端同管线的检索结果（同编号）——前端点 [n] 角标取第 n 项弹溯源卡片。"""
+    hits = retrieve(q, top_k=max(1, min(k, 8)))
+    return [
+        {
+            "title": h.title,
+            "category": h.category,
+            "source": h.source,
+            "url": h.url,
+            "text": h.text,
+        }
+        for h in hits
+    ]
 
 
 @app.post("/v1/chat/completions")

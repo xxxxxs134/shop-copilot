@@ -55,11 +55,14 @@ def list_schemas() -> list[dict[str, Any]]:
 
 
 def param_schema(required: list[str] | None = None, **props: Any) -> dict[str, Any]:
-    """快捷构造 JSON Schema。required 在前，其余为属性。"""
+    """快捷构造 JSON Schema。required 在前，其余为属性。
+
+    required=None → 全部必传（默认）；required=[] → 全部可选（如 order_lookup）。
+    """
     return {
         "type": "object",
         "properties": props,
-        "required": required or list(props.keys()),
+        "required": list(props.keys()) if required is None else required,
     }
 
 

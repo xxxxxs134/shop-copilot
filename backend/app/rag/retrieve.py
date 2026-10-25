@@ -177,6 +177,17 @@ def get_retriever() -> Retriever | None:
     return _retriever
 
 
+def invalidate_retriever() -> None:
+    """失效进程级检索单例（知识库 PUT/重建后调用）。
+
+    置 _retriever 为 None，下次 get_retriever() 重建（内存 BM25 索引随之刷新）；
+    同时清除失败标记，使「索引缺失后重建成功」的场景可以恢复。
+    """
+    global _retriever, _retriever_failed
+    _retriever = None
+    _retriever_failed = False
+
+
 def retrieve(query: str, top_k: int | None = None) -> list[Hit]:
     r = get_retriever()
     return r.retrieve(query, top_k) if r else []

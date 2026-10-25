@@ -1,4 +1,8 @@
-"""店智 Copilot — Agent 工具模块（kb_search / data_query / copywriting / policy_check）。
+"""店智 Copilot — Agent 工具模块（7 个工具）。
+
+P4 四件套：kb_search / data_query / copywriting / policy_check
+P5 新增（docs/plan-p5.md §3.3）：product_lookup / order_lookup / refund_flow
+  （refund_flow 两段式：validate 后端校验发令牌 → 用户确认 → execute 凭令牌执行）
 
 每个工具 = 一个 Tool 实例，注册到 REGISTRY。loop.py 通过 list_schemas() 生成
 OpenAI function calling 的 tools 数组，用 name 分发调用。
@@ -45,7 +49,14 @@ register(Tool(
 
 # ────────────────────────────── data_query ─────────────────────────────
 
-from .data_provider import snapshot_json
+from .data_provider import (
+    aftersales_json,
+    execute_refund_json,
+    orders_json,
+    products_json,
+    snapshot_json,
+    validate_refund_json,
+)
 
 
 def _data_query(query: str) -> str:
@@ -116,4 +127,107 @@ register(Tool(
         required=["scenario"],
     ),
     fn=_policy_check,
+))
+
+
+# ────────────────────────────── product_lookup ─────────────────────────
+
+def _product_lookup(keyword: str) -> str:
+    """商品价格/库存查询 — 走 DataProvider.get_products（SKU/名称模糊匹配）。"""
+    return products_json(keyword)
+
+
+register(Tool(
+    name="product_lookup",
+    description="查询商品价格与库存：按关键词/SKU 模糊匹配，返回价格、库存、上下架状态（含低库存提示）。",
+    parameters=param_schema(
+        keyword={"type": "string", "description": "商品关键词、名称或 SKU；传空字符串返回全部商品"},
+        required=["keyword"],
+    ),
+    fn=_product_lookup,
+))
+
+
+# ────────────────────────────── order_lookup ───────────────────────────
+
+def _order_lookup(order_id: str | None = None, status: str | None = None) -> str:
+    """订单/售后状态查询 — 走 DataProvider.get_orders + get_aftersales，合并返回。"""
+    orders = json.loads(orders_json(order_id=order_id, status=status))
+    aftersales = json.loads(aftersales_json(order_id=order_id))
+    result: dict = {
+        "ok": bool(orders.get("ok")) and bool(aftersales.get("ok")),
+        "order_count": orders.get("count", 0),
+        "orders": orders.get("orders", []),
+        "aftersales_count": aftersales.get("count", 0),
+        "aftersales": aftersales.get("aftersales", []),
+    }
+    errors = [e for e in (orders.get("error"), aftersales.get("error")) if e]
+    if errors:
+        result["errors"] = errors
+    if result["order_count"] == 0 and result["ok"]:
+        result["message"] = "未找到匹配的订单（可传 order_id 精确查或 status 过滤）"
+    return json.dumps(result, ensure_ascii=False)
+
+
+register(Tool(
+    name="order_lookup",
+    description="查询订单与售后状态：可按订单号精确查、按状态过滤（paid/shipped/received/refunding/refunded），返回订单列表及关联售后单。",
+    parameters=param_schema(
+        order_id={"type": "string", "description": "订单号（精确匹配，可选）"},
+        status={"type": "string", "description": "订单状态过滤：paid/shipped/received/refunding/refunded/unpaid（可选）"},
+        required=[],
+    ),
+    fn=_order_lookup,
+))
+
+
+# ────────────────────────────── refund_flow ────────────────────────────
+
+def _refund_flow(
+    action: str,
+    order_id: str,
+    amount: float | int | str | None = None,
+    token: str | None = None,
+) -> str:
+    """两段式退款：validate 后端校验并发令牌 → 用户确认 → execute 凭令牌执行（幂等）。
+
+    所有业务校验都在后端（data_provider._refund_violations），不信任模型传参；
+    模型只负责把 preview 复述给用户并征求确认。
+    """
+    if action not in ("validate", "execute"):
+        return json.dumps(
+            {"ok": False, "violations": [f"action 必须是 validate 或 execute，收到: {action!r}"]},
+            ensure_ascii=False,
+        )
+    if action == "validate":
+        if amount is None:
+            return json.dumps(
+                {"ok": False, "violations": ["validate 需要 amount 参数（退款金额）"]},
+                ensure_ascii=False,
+            )
+        return validate_refund_json(order_id, amount)
+    if not token:
+        return json.dumps(
+            {"ok": False, "violations": ['execute 需要 token 参数（先调 validate 获取确认令牌）']},
+            ensure_ascii=False,
+        )
+    return execute_refund_json(order_id, token)
+
+
+register(Tool(
+    name="refund_flow",
+    description=(
+        "两段式退款（必须先 validate 再 execute）："
+        "action='validate' 后端校验订单并返回 {token, preview}，把 preview 复述给用户问「确认退款吗？」；"
+        "用户确认后 action='execute' 携带 token 执行退款并返回回执。"
+        "校验不过返回 {ok:false, violations}，请原样转述；重复 execute 返回幂等「已退款」回执。"
+    ),
+    parameters=param_schema(
+        action={"type": "string", "enum": ["validate", "execute"], "description": "validate=校验并发令牌；execute=凭令牌执行"},
+        order_id={"type": "string", "description": "订单号"},
+        amount={"type": "number", "description": "退款金额（validate 必填；execute 忽略，以令牌锁定金额为准）"},
+        token={"type": "string", "description": "validate 返回的确认令牌（execute 必填，10 分钟内有效、一次性）"},
+        required=["action", "order_id"],
+    ),
+    fn=_refund_flow,
 ))

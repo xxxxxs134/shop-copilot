@@ -7,10 +7,14 @@
 - 週末（六/日）销量 ×1.25，工作日基准
 - 6 个商品、日粒度 metrics / product_sales / traffic_sources 三表
 - gmv 与商品销量联动，转化率 3.4%~4.8%，退款率 1.2%~3.2%
+- P5 业务表（docs/plan-p5.md §3.1）：products 12 商品（含 2 个低库存）、
+  orders 20 单（paid/shipped/received/refunding/refunded/unpaid）、
+  aftersales 6 条（退款中/已完成/被拒）——同样幂等重建，不入库（store.db 已 gitignore）
 """
 
 from __future__ import annotations
 
+import json
 import random
 import sqlite3
 from datetime import date, timedelta
@@ -25,6 +29,22 @@ PRODUCTS = [
     ("无线蓝牙耳机", 199.0),
     ("儿童保温杯", 69.0),
     ("厨房置物架", 129.0),
+]
+
+# P5 业务表种子：12 个商品（sku/name/price/stock/status，含 2 个低库存 + 1 个下架）
+CATALOG = [
+    ("SKU1001", "纯棉基础款T恤", 79.9, 320, "在售"),
+    ("SKU1002", "便携式充电宝", 99.0, 180, "在售"),
+    ("SKU1003", "桌面收纳盒", 49.9, 4, "在售"),      # 低库存
+    ("SKU1004", "无线蓝牙耳机", 199.0, 96, "在售"),
+    ("SKU1005", "儿童保温杯", 69.0, 2, "在售"),       # 低库存
+    ("SKU1006", "厨房置物架", 129.0, 58, "在售"),
+    ("SKU1007", "遮阳伞晴雨两用", 59.0, 240, "在售"),
+    ("SKU1008", "加厚珊瑚绒毯", 129.0, 75, "在售"),
+    ("SKU1009", "不锈钢保温饭盒", 89.0, 130, "在售"),
+    ("SKU1010", "宠物自动饮水机", 159.0, 46, "在售"),
+    ("SKU1011", "LED化妆镜带灯", 119.0, 88, "在售"),
+    ("SKU1012", "老款帆布双肩包", 99.0, 0, "下架"),
 ]
 
 SCHEMA = [
@@ -50,7 +70,98 @@ SCHEMA = [
         pct REAL NOT NULL,
         PRIMARY KEY (date, source)
     )""",
+    # ── P5 业务表（docs/plan-p5.md §3.1）──
+    """CREATE TABLE IF NOT EXISTS products (
+        sku TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        price REAL NOT NULL,
+        stock INTEGER NOT NULL,
+        status TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS orders (
+        order_id TEXT PRIMARY KEY,
+        buyer TEXT NOT NULL,
+        items_json TEXT NOT NULL,
+        amount REAL NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS aftersales (
+        id INTEGER PRIMARY KEY,
+        order_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        amount REAL NOT NULL,
+        created_at TEXT NOT NULL
+    )""",
 ]
+
+# P5 业务表种子行（created_at 相对 end 计算，保证售后期校验可复现）
+BUSINESS_TABLES = ("aftersales", "orders", "products")
+
+
+def _orders_seed(end: date) -> list[tuple]:
+    """20 单：状态覆盖 paid/shipped/received/refunding/refunded/unpaid，
+    其中 006/014 故意超出 7 天售后期，020 未付款——供退款校验演示违规分支。"""
+
+    def item(sku: str, name: str, price: float, qty: int) -> dict:
+        return {"sku": sku, "name": name, "price": price, "qty": qty}
+
+    plans: list[tuple[str, str, list[dict], str, int]] = [
+        # (单号后缀, 买家脱敏, 商品明细, 状态, 下单距今天数)
+        ("001", "张*", [item("SKU1001", "纯棉基础款T恤", 79.9, 2)], "paid", 1),
+        ("002", "王**", [item("SKU1002", "便携式充电宝", 99.0, 1)], "paid", 2),
+        ("003", "李*", [item("SKU1003", "桌面收纳盒", 49.9, 3)], "paid", 3),
+        ("004", "陈**", [item("SKU1004", "无线蓝牙耳机", 199.0, 1)], "paid", 5),
+        ("005", "赵*", [item("SKU1005", "儿童保温杯", 69.0, 2)], "paid", 6),
+        ("006", "孙**", [item("SKU1006", "厨房置物架", 129.0, 1)], "paid", 15),  # 超售后期
+        ("007", "周*", [item("SKU1001", "纯棉基础款T恤", 79.9, 1),
+                        item("SKU1003", "桌面收纳盒", 49.9, 1)], "shipped", 2),
+        ("008", "吴**", [item("SKU1008", "加厚珊瑚绒毯", 129.0, 1)], "shipped", 4),
+        ("009", "郑*", [item("SKU1009", "不锈钢保温饭盒", 89.0, 2)], "shipped", 6),
+        ("010", "冯**", [item("SKU1010", "宠物自动饮水机", 159.0, 1)], "shipped", 1),
+        ("011", "蒋*", [item("SKU1011", "LED化妆镜带灯", 119.0, 1)], "received", 3),
+        ("012", "沈**", [item("SKU1001", "纯棉基础款T恤", 79.9, 3)], "received", 5),
+        ("013", "韩*", [item("SKU1002", "便携式充电宝", 99.0, 2)], "received", 6),
+        ("014", "杨**", [item("SKU1005", "儿童保温杯", 69.0, 1)], "received", 20),  # 超售后期
+        ("015", "朱*", [item("SKU1008", "加厚珊瑚绒毯", 129.0, 2)], "received", 4),
+        ("016", "秦**", [item("SKU1004", "无线蓝牙耳机", 199.0, 1)], "refunding", 2),
+        ("017", "许*", [item("SKU1006", "厨房置物架", 129.0, 1)], "refunding", 3),
+        ("018", "何**", [item("SKU1009", "不锈钢保温饭盒", 89.0, 1)], "refunded", 8),
+        ("019", "吕*", [item("SKU1011", "LED化妆镜带灯", 119.0, 1)], "refunded", 10),
+        ("020", "施**", [item("SKU1012", "老款帆布双肩包", 99.0, 1)], "unpaid", 0),
+    ]
+    prefix = f"SO{end.strftime('%Y%m%d')}"
+    rows = []
+    for suffix, buyer, items, status, days_ago in plans:
+        amount = round(sum(i["price"] * i["qty"] for i in items), 2)
+        rows.append((
+            f"{prefix}{suffix}",
+            buyer,
+            json.dumps(items, ensure_ascii=False),
+            amount,
+            status,
+            (end - timedelta(days=days_ago)).isoformat(),
+        ))
+    return rows
+
+
+def _aftersales_seed(end: date) -> list[tuple]:
+    """6 条售后：2 退款中（对应 refunding 单）/ 2 已完成（对应 refunded 单）/
+    2 被拒（对应仍可再申请退款的 received 单）。"""
+
+    def ds(days_ago: int) -> str:
+        return (end - timedelta(days=days_ago)).isoformat()
+
+    prefix = f"SO{end.strftime('%Y%m%d')}"
+    return [
+        (1, f"{prefix}016", "仅退款", "退款中", 199.0, ds(2)),
+        (2, f"{prefix}017", "退货退款", "退款中", 129.0, ds(3)),
+        (3, f"{prefix}018", "仅退款", "已完成", 89.0, ds(8)),
+        (4, f"{prefix}019", "仅退款", "已完成", 119.0, ds(10)),
+        (5, f"{prefix}011", "仅退款", "被拒", 119.0, ds(2)),
+        (6, f"{prefix}013", "退货退款", "被拒", 198.0, ds(4)),
+    ]
 
 
 def build(end: date = date.today(), days: int = 30, seed: int = 42) -> None:
@@ -100,7 +211,28 @@ def build(end: date = date.today(), days: int = 30, seed: int = 42) -> None:
             )
 
         conn.commit()
+
+        # ── P5 业务表：幂等重建（与 30 天指标互不影响）──
+        for tbl in BUSINESS_TABLES:
+            conn.execute(f"DELETE FROM {tbl}")
+        conn.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?)", CATALOG)
+        conn.executemany(
+            "INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?)", _orders_seed(end)
+        )
+        conn.executemany(
+            "INSERT INTO aftersales VALUES (?, ?, ?, ?, ?, ?)", _aftersales_seed(end)
+        )
+        conn.commit()
+
         print(f"OK: {STORE_DB}（{days} 天，{days * (len(PRODUCTS) + 4)} 行，至 {end.isoformat()}）")
+        counts = {
+            tbl: conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
+            for tbl in BUSINESS_TABLES
+        }
+        print(
+            "OK: 业务表 "
+            + " ".join(f"{tbl}={counts[tbl]}" for tbl in ("products", "orders", "aftersales"))
+        )
     finally:
         conn.close()
 

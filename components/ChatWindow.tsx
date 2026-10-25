@@ -271,6 +271,10 @@ export function ChatWindow() {
    */
   async function routeToAgent(text: string, intent: IntentInfo, prior: UIMessage[]): Promise<void> {
     void stop().catch(() => undefined);
+    // 自动切换时若尚无会话，直接建 Agent 模式会话（避免 toggleMode 的"有内容建新会话"路径）
+    if (sessions.activeId === null) {
+      await sessions.newSession('agent');
+    }
     const converted: AgentMessage[] = [];
     for (const m of prior) {
       const content = uiText(m);
@@ -282,6 +286,7 @@ export function ChatWindow() {
       ...converted,
       { role: 'user', content: text, intent: { ...intent, switched: true } },
     ]);
+    setMessages([]); // 清空 RAG 队列，避免 debounce 保存时双队列冲突
     void sessions.switchModeInPlace('agent');
     await runAgentTurn(text, history);
   }
@@ -292,31 +297,31 @@ export function ChatWindow() {
     if (!text || busy) return;
     setInput('');
 
-    // 尚无会话（首条消息）→ 先建再发，保证消息能落库
-    if (sessions.activeId === null) {
-      await sessions.newSession();
-    }
-
-    // §2.2：意图识别与回答并行发起（不 await 在 sendMessage 之前 → 不阻塞首 token）
+    // §2.2：意图识别与回答并行发起
     const intentP = fetchIntent(text);
 
     if (mode === 'rag') {
       const prior = messages;
-      const sendP = sendMessage({ text });
+      // 先检查意图，自动切换时不建 RAG 会话（由 routeToAgent 建 Agent 会话）
       const intent = await intentP;
       if (intent && shouldAutoSwitch(intent.intent)) {
-        // data/policy/copywriting → 自动切 Agent（中止 RAG 流，AbortError 不外抛）
-        void sendP.catch(() => undefined);
         await routeToAgent(text, intent, prior);
         return;
       }
-      // knowledge/general → 留在 RAG，仅挂 chip
+      // knowledge/general → 留在 RAG，建会话 + 发消息
+      if (sessions.activeId === null) {
+        await sessions.newSession();
+      }
+      const sendP = sendMessage({ text });
       if (intent) attachIntentToLastUser(text, intent);
       await sendP;
       return;
     }
 
-    // Agent 模式：不回切，意图异步回填 chip，回答立即开跑
+    // Agent 模式：建会话 + 发消息
+    if (sessions.activeId === null) {
+      await sessions.newSession('agent');
+    }
     const history = agentMessages.map((m) => ({ role: m.role, content: m.content }));
     setAgentMessages((prev) => [...prev, { role: 'user', content: text }]);
     void intentP.then((intent) => {

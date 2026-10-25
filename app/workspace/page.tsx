@@ -6,6 +6,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { PendingItem } from "@/components/PendingItem";
 import { QuickAction } from "@/components/QuickAction";
 import { RecentSession } from "@/components/RecentSession";
+import { BarChart, KbStats, IntentDist } from "@/components/WorkspaceCharts";
 
 interface WorkspaceData {
   kpis: {
@@ -31,6 +32,9 @@ interface WorkspaceData {
     mode: string;
     updated_at: number;
   }>;
+  top_products: Array<{ name: string; sales: number; gmv: number }>;
+  traffic_sources: Record<string, number>;
+  kb_stats: { doc_count: number; chunk_count: number; retrieval_score: number };
 }
 
 export default function WorkspacePage() {
@@ -47,6 +51,9 @@ export default function WorkspacePage() {
           kpis: { gmv: 0, gmv_trend: 0, orders: 0, orders_trend: 0, refund_rate: 0, refund_rate_trend: 0, conversion: 0, conversion_trend: 0 },
           pending: [],
           recent_sessions: [],
+          top_products: [],
+          traffic_sources: {},
+          kb_stats: { doc_count: 0, chunk_count: 0, retrieval_score: 0 },
         }),
       )
       .finally(() => setLoading(false));
@@ -90,28 +97,64 @@ export default function WorkspacePage() {
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* 待处理事项 */}
-          <div className="lg:col-span-2">
-            <h2 className="mb-3 text-sm font-semibold text-slate-600">
-              待处理事项{data?.pending.length ? ` (${data.pending.length})` : ""}
-            </h2>
-            <div className="space-y-2">
-              {data?.pending.length ? (
-                data.pending.map((p) => (
-                  <PendingItem
-                    key={p.order_id + p.date}
-                    orderId={p.order_id}
-                    type={p.type}
-                    amount={p.amount}
-                    status={p.status}
-                    date={p.date}
-                    onAction={handlePendingAction}
-                  />
-                ))
-              ) : (
-                <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-                  暂无待处理事项
-                </div>
-              )}
+          <div className="lg:col-span-2 space-y-6">
+            <div>
+              <h2 className="mb-3 text-sm font-semibold text-slate-600">
+                待处理事项{data?.pending.length ? ` (${data.pending.length})` : ""}
+              </h2>
+              <div className="space-y-2">
+                {data?.pending.length ? (
+                  data.pending.map((p) => (
+                    <PendingItem
+                      key={p.order_id + p.date}
+                      orderId={p.order_id}
+                      type={p.type}
+                      amount={p.amount}
+                      status={p.status}
+                      date={p.date}
+                      onAction={handlePendingAction}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                    暂无待处理事项
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 热销商品 + 流量来源 */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="mb-3 text-xs font-semibold text-slate-500">热销商品 Top 3</h3>
+                <BarChart
+                  items={(data?.top_products ?? []).slice(0, 3).map((p) => ({
+                    label: p.name,
+                    value: p.sales,
+                    suffix: " 件",
+                  }))}
+                />
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="mb-3 text-xs font-semibold text-slate-500">流量来源占比</h3>
+                <BarChart
+                  items={Object.entries(data?.traffic_sources ?? {}).map(([k, v]) => ({
+                    label: k === "direct" ? "直接" : k === "paid" ? "付费" : k === "recommend" ? "推荐" : k === "search" ? "搜索" : k,
+                    value: v,
+                    suffix: "%",
+                  }))}
+                />
+              </div>
+            </div>
+
+            {/* 知识库状态 */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="mb-3 text-xs font-semibold text-slate-500">知识库状态</h3>
+              <KbStats
+                docCount={data?.kb_stats?.doc_count ?? 0}
+                chunkCount={data?.kb_stats?.chunk_count ?? 0}
+                retrievalScore={data?.kb_stats?.retrieval_score ?? 0}
+              />
             </div>
           </div>
 
@@ -143,6 +186,23 @@ export default function WorkspacePage() {
                   <p className="px-3 py-4 text-center text-xs text-slate-400">暂无会话</p>
                 )}
               </div>
+            </div>
+
+            {/* 意图分布 */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="mb-3 text-xs font-semibold text-slate-500">意图分布</h3>
+              <IntentDist
+                counts={
+                  data?.recent_sessions.reduce(
+                    (acc, s) => {
+                      const intent = s.mode === "agent" ? "data" : "knowledge";
+                      acc[intent] = (acc[intent] ?? 0) + 1;
+                      return acc;
+                    },
+                    {} as Record<string, number>,
+                  ) ?? {}
+                }
+              />
             </div>
           </div>
         </div>

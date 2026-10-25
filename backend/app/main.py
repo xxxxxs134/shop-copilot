@@ -30,6 +30,7 @@ from .api_intent import router as intent_router
 from .api_kb import router as kb_router
 from .api_workspace import router as workspace_router
 from .api_data import router as data_router
+from .api_refund import router as refund_router
 
 # 读取 backend/.env 中的密钥（不进 git）
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -87,6 +88,7 @@ app.include_router(intent_router)
 app.include_router(kb_router)
 app.include_router(workspace_router)
 app.include_router(data_router)
+app.include_router(refund_router)
 
 
 @app.get("/health")

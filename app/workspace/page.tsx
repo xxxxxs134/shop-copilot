@@ -7,6 +7,7 @@ import { PendingItem } from "@/components/PendingItem";
 import { QuickAction } from "@/components/QuickAction";
 import { RecentSession } from "@/components/RecentSession";
 import { BarChart, KbStats, IntentDist } from "@/components/WorkspaceCharts";
+import { RefundDialog } from "@/components/RefundDialog";
 
 interface WorkspaceData {
   kpis: {
@@ -41,6 +42,7 @@ export default function WorkspacePage() {
   const router = useRouter();
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refundOrder, setRefundOrder] = useState<{ order_id: string; product: string; buyer: string; amount: number; status: string; date: string } | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/workspace/summary")
@@ -60,8 +62,10 @@ export default function WorkspacePage() {
   }, []);
 
   const handlePendingAction = (orderId: string) => {
-    sessionStorage.setItem("prefill_query", `帮我处理 ${orderId} 的退款`);
-    router.push("/chat");
+    const item = data?.pending.find((p) => p.order_id === orderId);
+    if (item) {
+      setRefundOrder({ order_id: item.order_id, product: item.type, buyer: "—", amount: item.amount, status: item.status, date: item.date });
+    }
   };
 
   const handleSessionClick = (sessionId: string) => {
@@ -207,6 +211,13 @@ export default function WorkspacePage() {
           </div>
         </div>
       </main>
+
+      {refundOrder && (
+        <RefundDialog
+          order={refundOrder}
+          onClose={() => setRefundOrder(null)}
+        />
+      )}
     </div>
   );
 }

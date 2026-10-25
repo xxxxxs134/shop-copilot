@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RefundDialog } from "@/components/RefundDialog";
 
 type Tab = "orders" | "products" | "aftersales";
 
@@ -41,6 +42,7 @@ export default function DataPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refundOrder, setRefundOrder] = useState<{ order_id: string; product: string; buyer: string; amount: number; status: string; date: string } | null>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -173,12 +175,30 @@ export default function DataPage() {
                       </td>
                     ))}
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => handleChat(row)}
-                        className="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-700"
-                      >
-                        对话
-                      </button>
+                      {tab === "orders" && ["paid", "shipped", "received"].includes(String(row.status)) ? (
+                        <button
+                          onClick={() =>
+                            setRefundOrder({
+                              order_id: String(row.order_id),
+                              product: String(row.product),
+                              buyer: String(row.buyer),
+                              amount: Number(row.amount),
+                              status: String(row.status),
+                              date: String(row.date),
+                            })
+                          }
+                          className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-red-700"
+                        >
+                          退款
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleChat(row)}
+                          className="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-700"
+                        >
+                          对话
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -191,6 +211,10 @@ export default function DataPage() {
           <p className="mt-3 text-xs text-slate-400">显示 {filtered.length} / {rows.length} 条</p>
         )}
       </main>
+
+      {refundOrder && (
+        <RefundDialog order={refundOrder} onClose={() => setRefundOrder(null)} />
+      )}
     </div>
   );
 }

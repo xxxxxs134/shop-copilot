@@ -273,6 +273,29 @@ export function useSessions(opts: UseSessionsOptions) {
 
   const clearError = useCallback(() => setError(null), []);
 
+  /**
+   * 意图自动路由专用（P5 §2.2）：原地 PATCH 模式，**不新建会话**。
+   *
+   * 与 toggleMode 的区别：toggleMode 在「有消息」时会新建会话保内容，
+   * 而自动路由要求同会话内切模式 —— 消息迁移由调用方（ChatWindow）负责。
+   * 本地 mode 先行同步（含 modeRef，保证 debounce flush 取到新队列），
+   * PATCH 失败只报错不回滚，避免会话存储卡住发送链路。
+   */
+  const switchModeInPlace = useCallback(async (next: SessionMode): Promise<void> => {
+    setMode(next);
+    modeRef.current = next;
+    const id = activeIdRef.current;
+    if (id && !loadingRef.current) {
+      try {
+        await patchSession(id, { mode: next });
+        setSessions((prev) => prev.map((x) => (x.id === id ? { ...x, mode: next } : x)));
+        setError(null);
+      } catch (err) {
+        setError(errText(err));
+      }
+    }
+  }, []);
+
   // 启动：拉列表 → 自动打开最近会话
   const openRef = useRef(openSession);
   useEffect(() => {
@@ -312,5 +335,6 @@ export function useSessions(opts: UseSessionsOptions) {
     renameSession,
     removeSession,
     toggleMode,
+    switchModeInPlace,
   };
 }

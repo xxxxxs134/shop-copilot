@@ -10,6 +10,12 @@ import { CitationCard } from './CitationCard';
 import { runAgentStream } from '@/lib/agentRun';
 import { useSessions } from '@/lib/useSessions';
 import { ragSearch, type AgentMessage, type CitationSource } from '@/lib/sessionsClient';
+import {
+  fetchIntent,
+  shouldAutoSwitch,
+  type IntentInfo,
+  type IntentUIMessage,
+} from '@/lib/intentClient';
 
 /** SpeechRecognition 最小接口（浏览器 API 无官方 TS 类型） */
 interface SpeechRecognitionLike {
@@ -35,6 +41,8 @@ function uiText(m: UIMessage): string {
  * - Agent 模式：runAgentStream + /api/agent（ReAct 循环，步骤卡片）
  * - 会话：useSessions 状态机（列表/切换/改名/删除/debounce 保存）
  * - 引用：[n] 角标点击 → ragSearch（同序来源）→ CitationCard 溯源
+ * - 意图分流（P5 §2.2）：发送时与回答并行识别意图 → 气泡上方 chip；
+ *   RAG 模式遇 data/policy/copywriting 自动切 Agent，Agent 模式永不回切
  */
 export function ChatWindow() {
   const [input, setInput] = useState('');
@@ -193,6 +201,60 @@ export function ChatWindow() {
     void runAgentTurn(lastUser.content, history);
   }
 
+  // ── 意图分流（P5 §2.2）：chip 回填 + RAG→Agent 非对称自动路由 ──
+
+  /** 把意图结果回填到本轮 user 消息（按文本从尾部匹配，跳过已带 intent 的历史消息） */
+  function attachIntentToLastUser(text: string, intent: IntentInfo): void {
+    setMessages((prev) => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const m = prev[i];
+        if (m.role !== 'user' || uiText(m) !== text) continue;
+        if ((m as IntentUIMessage).intent) continue;
+        const next = [...prev];
+        const updated: IntentUIMessage = { ...m, intent };
+        next[i] = updated;
+        return next;
+      }
+      return prev;
+    });
+  }
+
+  /** Agent 模式：意图只挂 chip，永不回切（§2.2 路由表第三行） */
+  function attachAgentIntent(text: string, intent: IntentInfo): void {
+    setAgentMessages((prev) => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const m = prev[i];
+        if (m.role !== 'user' || m.content !== text || m.intent) continue;
+        const next = [...prev];
+        next[i] = { ...m, intent };
+        return next;
+      }
+      return prev;
+    });
+  }
+
+  /**
+   * RAG → Agent 自动路由（§2.2 路由表第一行）：
+   * 中止并行中的 RAG 流 → 已有消息迁成 Agent 队列 → 原地 PATCH mode → 走 agent 端点重答本轮。
+   * RAG 队列不清空：Agent 模式下既不渲染也不保存它（装载/切模式时由 onSessionLoaded 覆盖）。
+   */
+  async function routeToAgent(text: string, intent: IntentInfo, prior: UIMessage[]): Promise<void> {
+    void stop().catch(() => undefined);
+    const converted: AgentMessage[] = [];
+    for (const m of prior) {
+      const content = uiText(m);
+      if (!content.trim()) continue;
+      converted.push({ role: m.role === 'user' ? 'user' : 'assistant', content });
+    }
+    const history = converted.map((m) => ({ role: m.role, content: m.content }));
+    setAgentMessages([
+      ...converted,
+      { role: 'user', content: text, intent: { ...intent, switched: true } },
+    ]);
+    void sessions.switchModeInPlace('agent');
+    await runAgentTurn(text, history);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -204,13 +266,31 @@ export function ChatWindow() {
       await sessions.newSession();
     }
 
+    // §2.2：意图识别与回答并行发起（不 await 在 sendMessage 之前 → 不阻塞首 token）
+    const intentP = fetchIntent(text);
+
     if (mode === 'rag') {
-      await sendMessage({ text });
+      const prior = messages;
+      const sendP = sendMessage({ text });
+      const intent = await intentP;
+      if (intent && shouldAutoSwitch(intent.intent)) {
+        // data/policy/copywriting → 自动切 Agent（中止 RAG 流，AbortError 不外抛）
+        void sendP.catch(() => undefined);
+        await routeToAgent(text, intent, prior);
+        return;
+      }
+      // knowledge/general → 留在 RAG，仅挂 chip
+      if (intent) attachIntentToLastUser(text, intent);
+      await sendP;
       return;
     }
 
+    // Agent 模式：不回切，意图异步回填 chip，回答立即开跑
     const history = agentMessages.map((m) => ({ role: m.role, content: m.content }));
     setAgentMessages((prev) => [...prev, { role: 'user', content: text }]);
+    void intentP.then((intent) => {
+      if (intent) attachAgentIntent(text, intent);
+    });
     await runAgentTurn(text, history);
   }
 
@@ -390,6 +470,8 @@ export function ChatWindow() {
                     busy={generating}
                     onCite={(n) => void handleCite(n)}
                     onRegenerate={() => void regenerate()}
+                    intent={(m as IntentUIMessage).intent}
+                    mode={mode}
                   />
                 ))}
                 {status === 'submitted' && (
@@ -423,6 +505,8 @@ export function ChatWindow() {
                       busy={generating}
                       onCite={(n) => void handleCite(n)}
                       onRegenerate={regenerateAgent}
+                      intent={m.intent}
+                      mode={mode}
                     />
                   </div>
                 ))}

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import type { SessionId, SessionMeta, SessionMode } from '@/lib/sessionsClient';
 
 /**
@@ -37,6 +39,8 @@ export function Sidebar({
   const [draftTitle, setDraftTitle] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<SessionId | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const pathname = usePathname();
+  const kbActive = pathname === '/kb';
 
   // 进入编辑态自动聚焦
   useEffect(() => {
@@ -213,6 +217,33 @@ export function Sidebar({
           );
         })}
       </nav>
+
+      {/* 知识库入口（P5 §4.2，底部导航） */}
+      <div className="border-t border-slate-200 px-2 py-2">
+        <Link
+          href="/kb"
+          className={`flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition ${
+            kbActive
+              ? 'bg-brand-50 font-medium text-brand-800 ring-1 ring-brand-200'
+              : 'text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className={`h-4 w-4 shrink-0 ${kbActive ? 'text-brand-600' : 'text-slate-400'}`}
+          >
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+          </svg>
+          <span className="truncate">知识库</span>
+          <span className="ml-auto shrink-0 text-[10px] text-slate-400">文档 · 切片</span>
+        </Link>
+      </div>
 
       {/* 底部说明 */}
       <div className="border-t border-slate-200 px-4 py-3 text-[10px] leading-relaxed text-slate-400">

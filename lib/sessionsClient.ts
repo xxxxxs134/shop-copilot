@@ -17,6 +17,7 @@
 
 import type { UIMessage } from 'ai';
 import type { AgentStep } from '@/components/AgentSteps';
+import type { IntentInfo } from './intentClient';
 
 export type SessionMode = 'rag' | 'agent';
 
@@ -43,6 +44,8 @@ export interface AgentMessage {
   role: 'user' | 'assistant';
   content: string;
   steps?: AgentStep[];
+  /** 意图识别结果（P5 §2.2，仅 user 消息）；老会话无此字段 → 不渲染 chip */
+  intent?: IntentInfo;
 }
 
 /** /v1/rag/search 返回体：第 n 项即回答中 [n] 角标的来源 */

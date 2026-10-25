@@ -28,6 +28,8 @@ from .agent.loop import run_agent
 from . import store
 from .api_intent import router as intent_router
 from .api_kb import router as kb_router
+from .api_workspace import router as workspace_router
+from .api_data import router as data_router
 
 # 读取 backend/.env 中的密钥（不进 git）
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -83,6 +85,8 @@ app.add_middleware(
 # P5 集成：意图分流 + 轻量知识库管理（docs/plan-p5.md §7，仅整合者改此处）
 app.include_router(intent_router)
 app.include_router(kb_router)
+app.include_router(workspace_router)
+app.include_router(data_router)
 
 
 @app.get("/health")

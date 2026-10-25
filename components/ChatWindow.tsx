@@ -7,6 +7,7 @@ import { MessageBubble } from './MessageBubble';
 import { AgentSteps } from './AgentSteps';
 import { Sidebar } from './Sidebar';
 import { CitationCard } from './CitationCard';
+import { OrderDetailCard } from './OrderDetailCard';
 import { runAgentStream } from '@/lib/agentRun';
 import { useSessions } from '@/lib/useSessions';
 import { ragSearch, type AgentMessage, type CitationSource } from '@/lib/sessionsClient';
@@ -69,6 +70,17 @@ export function ChatWindow() {
   const [agentError, setAgentError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // ── 订单号检测（useMemo 派生，不触发 setState-in-effect）──
+  const [dismissedOrder, setDismissedOrder] = useState<string | null>(null);
+  const rawDetectedOrder = useMemo(() => {
+    const allText = [
+      ...messages.map((m) => uiText(m)),
+      ...agentMessages.map((m) => (typeof m.content === "string" ? m.content : "")),
+    ].join(" ");
+    return allText.match(/SO\d{12}/)?.[0] ?? null;
+  }, [messages, agentMessages]);
+  const detectedOrder = rawDetectedOrder !== dismissedOrder ? rawDetectedOrder : null;
+
   // ── 会话状态机（P4）──
   const sessions = useSessions({
     getPayload: (m) => (m === 'rag' ? messages : agentMessages),
@@ -93,6 +105,25 @@ export function ChatWindow() {
   useEffect(() => {
     notifyChanged();
   }, [messages, agentMessages, notifyChanged]);
+
+  // ── 预填查询（从工作台/数据页跳转时，一次性）──
+  const prefillDone = useRef(false);
+  useEffect(() => {
+    if (prefillDone.current) return;
+    prefillDone.current = true;
+    const prefill = sessionStorage.getItem("prefill_query");
+    if (prefill) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setInput(prefill);
+      sessionStorage.removeItem("prefill_query");
+    }
+    const sessionId = sessionStorage.getItem("active_session_id");
+    if (sessionId) {
+      sessionStorage.removeItem("active_session_id");
+      void sessions.openSession(sessionId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 自动滚动（新内容且用户贴底时）
   useEffect(() => {
@@ -410,7 +441,10 @@ export function ChatWindow() {
       />
 
       {/* 主聊天列 */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        {detectedOrder && (
+          <OrderDetailCard orderId={detectedOrder} onClose={() => setDismissedOrder(detectedOrder)} />
+        )}
         <div className="mx-auto flex h-full w-full max-w-3xl flex-1 flex-col px-4">
           {/* 顶栏 */}
           <header className="flex items-center justify-between border-b border-slate-200 py-4">

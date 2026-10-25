@@ -221,6 +221,35 @@ export function Sidebar({
       {/* 知识库入口（P5 §4.2，底部导航） */}
       <div className="border-t border-slate-200 px-2 py-2">
         <Link
+          href="/chat"
+          className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          <span className="truncate">对话</span>
+        </Link>
+        <Link
+          href="/workspace"
+          className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400">
+            <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+          <span className="truncate">工作台</span>
+          <span className="ml-auto shrink-0 text-[10px] text-slate-400">KPI · 待办</span>
+        </Link>
+        <Link
+          href="/data"
+          className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400">
+            <path d="M3 3v18h18" /><path d="M7 16V9" /><path d="M12 16V5" /><path d="M17 16v-3" />
+          </svg>
+          <span className="truncate">数据</span>
+          <span className="ml-auto shrink-0 text-[10px] text-slate-400">订单 · 商品</span>
+        </Link>
+        <Link
           href="/kb"
           className={`flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition ${
             kbActive

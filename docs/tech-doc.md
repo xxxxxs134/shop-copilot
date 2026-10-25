@@ -222,7 +222,54 @@ Agent 自主决定两次调用数据工具（先总体指标、后热销品与�
 
 ---
 
-## 6. 工程质量
+## 6. 会话管理与引用溯源（P4）
+
+### 6.1 数据模型与 API 契约
+
+- 会话存储：SQLite（`data/app.db`，stdlib `sqlite3` autocommit，不入库）
+- `sessions` 表：`id TEXT PK`（`uuid4().hex[:12]`）· `title` · `mode`（`rag`/`agent`）· `messages TEXT`（JSON 全量）· `created_at`/`updated_at REAL`（epoch 秒浮点）
+- API（前端经 catch-all 代理 `app/api/v1/[...path]/route.ts` → `BACKEND_URL`，浏览器永不直连 8000）：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v1/sessions` | 元数据列表，`updated_at` 降序置顶 |
+| POST | `/v1/sessions` | 新建（可带初始 mode/title） |
+| GET | `/v1/sessions/{id}` | 完整消息恢复 |
+| PUT | `/v1/sessions/{id}` | 全量覆盖 messages |
+| PATCH | `/v1/sessions/{id}` | `{title?, mode?}` 至少一个字段 |
+| DELETE | `/v1/sessions/{id}` | 删除（前端两步确认后才发） |
+| GET | `/v1/rag/search?q=&k=4` | 检索溯源，与生成端**同序同参** → 角标 [n] 可回查原文 |
+
+### 6.2 前端状态机（`lib/useSessions.ts`）
+
+会话切换是典型的「异步竞态陷阱」，用四层防护：
+
+1. **debounce 1.5s**：消息变化 `PUT` 全量覆盖，切会话/新建前强制 flush；
+2. **签名守卫**：`signature(id, messages)` 存入 `savedSigRef`，发送前比对，相同则跳过——杜绝重复写与「旧签名覆盖新内容」；
+3. **loadingRef**：加载窗口内禁止 flush，防止「旧会话的消息写进新会话」；
+4. **activeIdRef 镜像**：回调闭包里读 ref 而非 state，规避闭包过期。
+
+**幽灵会话排查结论**（诚实呈现）：验收期曾出现一条来源不明的会话。处置：删除后**干净重放全部流程 + Playwright 网络抓包（filter api/v1）零异常 POST**；代码审查确认无自动创建路径。判定为探索阶段残留/环境偶发，非系统性 bug——记录于此供评审复核。
+
+### 6.3 引用溯源链路
+
+```
+RAG 回答（DeepSeek 生成，system 注入带编号片段）
+  → 前端 MarkdownText 将 [1][2] 渲染为可点角标
+  → 点击 → CitationCard 右下弹出
+  → 调 GET /v1/rag/search?q=<原问题>&k=4
+  → 与生成端完全同序的 top-4 片段，按角标序号定位原文
+```
+
+「生成用什么，回查就返回什么」——同端点、同参数、同排序，避免了生成后溯源的二次检索不一致问题。
+
+### 6.4 全链路验收（e2e）
+
+Playwright + API 双通道，12/12 通过：刷新恢复 / 角标溯源 / 追问仅 PUT / 改名 PATCH / 两步删除取消+确认 / 空会话切模式 PATCH×2 / Agent 模式 data_query 步骤卡片 + SQLite 真数据 + 自动标题。终验：`p4_api_test.py` 12/12，tsc=0，eslint=0，next build=0，测试会话已清空。
+
+---
+
+## 7. 工程质量
 
 ### 6.1 验收清单
 
@@ -282,7 +329,67 @@ docs/
 
 ---
 
-## 7. 演示与复现
+## 8. 扩展设计：长会话与上下文压缩
+
+> 本章为**设计储备**（未实现，未计入验收）。目的：回答评审"会话长了怎么办"，并给出与业界标杆的对照。
+
+### 8.1 现状与边界
+
+本项目采用**全量重放**：每轮将该会话全部 `{role, content}` 发给模型，SQLite 持久化。在演示规模（单会话几十轮内）简单可靠，零额外失败模式。真实产品中数百轮会话会撞上 200k 上下文窗口，需要压缩。
+
+### 8.2 业界标杆：Claude Code 的五种压缩机制
+
+对 Claude Code 反混淆源码（社区开源还原版）与官方文档的调研结论：
+
+| 机制 | 触发 | 调 LLM？ | 行为 |
+|------|------|---------|------|
+| Auto full compact | 单轮后 token ≥ 阈值 | ✅ | 全历史替换为摘要，保留近期尾部 |
+| 手动 `/compact` | 用户命令 | ✅ | 同上，可附摘要侧重点 |
+| Sub-agent compact | 子代理回合前 | ✅ | 对子代理自身历史压缩 |
+| Microcompact | token 紧张 | ❌ | 仅清旧工具结果，零成本 |
+| Session memory compact | 自动 | ❌ | 用落盘会话记忆文件当摘要 |
+
+**关键阈值公式**（200k 窗口示例）：
+
+```
+有效窗口 = context_window − min(max_output, 20000)   // 为摘要输出预留
+自动压缩线 = 有效窗口 − 13000                        // ≈ 178k，约 89%
+警告线 = 自动压缩线 − 20000
+硬阻断 = context_window − 3000                       // 超过拒绝生成
+```
+
+### 8.3 压缩后的消息结构（"摘要 + 近期保留"如何拼装）
+
+```
+[boundaryMarker]   # 压缩边界标记（类型/压缩前 token 数）
+[summary]          # 1 条摘要（伪装 user 消息，不污染 assistant 轮次）
+[messagesToKeep]   # 近期原文尾部（tool_use/tool_result 已剥离）
+[attachments]      # plan 等附件
+```
+
+近期保留段的选择规则（Rust 还原版实现）：
+
+1. 按 **token 预算**（非条数）从尾部往前累加，预算用完即切；
+2. **配对安全吸附**：切点若落在 `tool_result` 上则回退——宁多勿拆（API 要求 tool_result 紧跟 tool_use）；
+3. 切点之前全部送**单次非 agentic API 调用**生成摘要（禁 thinking、输出上限 20k、极少工具），防止递归触发压缩。
+
+### 8.4 压缩后什么存活（官方文档）
+
+system prompt / output style 保留；**CLAUDE.md、auto memory、plan、skills 从磁盘重新注入**；git status 重读。设计哲学：**权威记忆落盘 + 每次重注入，上下文里的对话历史只是可丢弃缓存**。
+
+### 8.5 若落地到本项目的演进路径
+
+| 步骤 | 方案 | 成本 | 依赖 |
+|------|------|------|------|
+| 1 | Microcompact 思路：超阈值先剥离旧轮次的工具结果 JSON | 零 LLM 调用 | 无（消息结构已含 role 区分） |
+| 2 | 尾部 token 预算切分 + 配对吸附，头部单次 LLM 摘要替换 | 一次调用 | 步骤 1 |
+| 3 | 压缩边界写入 SQLite `sessions` 表，刷新恢复时按边界拼装 | 无 | 步骤 2 |
+
+当前不做：比赛规模下全量重放更稳，过早引入压缩是负资产。本章仅证明"想过、想清楚了"。
+
+---
+
+## 9. 演示与复现
 
 ### 7.1 启动（双服务）
 
@@ -338,4 +445,4 @@ npm run dev
 
 ---
 
-_文档版本 v1.0 · 生成于 2026-10-24 · 导出 PDF 见 docs/tech-doc-outline.md 附录_
+_文档版本 v1.1 · 更新于 2026-10-24 · 新增 §6 会话管理与引用溯源（P4）、§8 长会话与上下文压缩扩展设计_

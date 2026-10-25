@@ -248,11 +248,6 @@ export function useSessions(opts: UseSessionsOptions) {
       if (next === modeRef.current) return;
       const id = activeIdRef.current;
       if (id && !loadingRef.current) {
-        const payload = optsRef.current.getPayload(modeRef.current);
-        if (payload.length > 0) {
-          await newSession(next);
-          return;
-        }
         try {
           await patchSession(id, { mode: next });
           setSessions((prev) => prev.map((x) => (x.id === id ? { ...x, mode: next } : x)));
@@ -268,7 +263,7 @@ export function useSessions(opts: UseSessionsOptions) {
       setMode(next);
       modeRef.current = next;
     },
-    [newSession],
+    [],
   );
 
   const clearError = useCallback(() => setError(null), []);

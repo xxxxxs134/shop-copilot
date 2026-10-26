@@ -11,6 +11,7 @@
 
 import logging
 import time
+from datetime import date, timedelta
 
 from fastapi import APIRouter
 
@@ -37,7 +38,7 @@ def _daily_metrics(orders: list[dict]) -> dict[str, dict[str, float]]:
         lambda: {"gmv": 0.0, "orders": 0, "refunds": 0}
     )
     for o in orders:
-        d = o.get("created_at", "")
+        d = str(o.get("created_at", ""))[:10]
         if not d:
             continue
         daily[d]["gmv"] += float(o.get("amount", 0))
@@ -45,6 +46,120 @@ def _daily_metrics(orders: list[dict]) -> dict[str, dict[str, float]]:
         if o.get("status") in ("refunding", "refunded", "rejected"):
             daily[d]["refunds"] += 1
     return dict(daily)
+
+
+INSIGHT_TYPE_RANK: dict[str, int] = {"warning": 0, "suggestion": 1, "info": 2}
+
+
+def _refund_insight(
+    refund_rate: float, daily: dict[str, dict[str, float]]
+) -> dict[str, str] | None:
+    """退款率 > 2.5% 时告警，与窗口内日均退款率对比。"""
+    if refund_rate <= 2.5:
+        return None
+    rates = [
+        d["refunds"] / max(d["orders"], 1) * 100
+        for d in daily.values()
+        if d["orders"] > 0
+    ]
+    avg_rate = sum(rates) / len(rates) if rates else 0.0
+    delta = refund_rate - avg_rate
+    if abs(delta) < 0.005:
+        compare = "与近期均值持平"
+    else:
+        compare = f"较近期均值{'上升' if delta > 0 else '下降'} {abs(delta):.2f}%"
+    return {
+        "icon": "📊",
+        "text": f"今日退款率 {refund_rate:.2f}%，{compare}。建议关注退款集中的商品类目。",
+        "type": "warning",
+    }
+
+
+def _stock_insight(products: list[dict]) -> dict[str, str] | None:
+    """在售商品库存 ≤ 5 件时告警：报最紧急的一个，多个时提示总数。"""
+    low = sorted(
+        (p for p in products if p.get("status") == "在售" and 0 <= (p.get("stock") or 0) <= 5),
+        key=lambda p: p.get("stock") or 0,
+    )
+    if not low:
+        return None
+    worst = low[0]
+    name = f"{worst.get('sku', '')} {worst.get('name', '')}".strip()
+    stock = int(worst.get("stock") or 0)
+    more = f"另有 {len(low) - 1} 个在售商品库存告急，" if len(low) > 1 else ""
+    return {
+        "icon": "📦",
+        "text": f"{name}库存仅 {stock} 件，{more}建议尽快补货。",
+        "type": "warning",
+    }
+
+
+def _knowledge_insight(
+    kb_stats: dict, recent_sessions: list[dict]
+) -> dict[str, str] | None:
+    """知识库索引为空或近期无会话时，建议更新知识库。"""
+    chunk_count = int(kb_stats.get("chunk_count", 0))
+    if chunk_count > 0 and recent_sessions:
+        return None
+    doc_count = int(kb_stats.get("doc_count", 0))
+    if chunk_count == 0:
+        text = f"知识库 {doc_count} 篇文档尚未建立索引，建议先构建索引并补充平台新规则。"
+    else:
+        text = f"知识库 {doc_count} 篇文档最近 7 天无更新，建议关注平台新规则。"
+    return {"icon": "💡", "text": text, "type": "suggestion"}
+
+
+def _gmv_insight(gmv: float, orders: float) -> dict[str, str] | None:
+    """今日 GMV > 0 时给经营活跃的正向提示。"""
+    if gmv <= 0:
+        return None
+    return {
+        "icon": "📈",
+        "text": f"今日 GMV ¥{gmv:,.0f}、订单 {int(orders)} 单，经营活跃度良好。",
+        "type": "info",
+    }
+
+
+ORDER_STATUSES: tuple[str, ...] = (
+    "paid",
+    "shipped",
+    "received",
+    "refunding",
+    "refunded",
+    "rejected",
+    "unpaid",
+)
+
+
+def _daily_trend(orders: list[dict], days: int = 30) -> list[dict]:
+    """最近 N 天 GMV/订单数趋势：按 created_at 日期聚合，缺失日期补零，日期升序。"""
+    daily = _daily_metrics(orders)
+    today = date.today()
+    trend: list[dict] = []
+    for i in range(days - 1, -1, -1):
+        ds = (today - timedelta(days=i)).isoformat()
+        m = daily.get(ds, {"gmv": 0.0, "orders": 0})
+        trend.append({"date": ds, "gmv": m["gmv"], "orders": m["orders"]})
+    return trend
+
+
+def _order_status_dist(orders: list[dict]) -> dict[str, int]:
+    """订单状态分布（固定 7 个状态键，无数据补 0）。"""
+    dist: dict[str, int] = dict.fromkeys(ORDER_STATUSES, 0)
+    for o in orders:
+        s = str(o.get("status", ""))
+        if s in dist:
+            dist[s] += 1
+    return dist
+
+
+def _aftersales_dist(aftersales: list[dict]) -> dict[str, int]:
+    """售后单状态分布（按实际状态计数）。"""
+    dist: dict[str, int] = {}
+    for a in aftersales:
+        s = str(a.get("status", ""))
+        dist[s] = dist.get(s, 0) + 1
+    return dist
 
 
 @router.get("/v1/workspace/summary", summary="运营工作台概览")
@@ -122,17 +237,48 @@ async def get_workspace_summary() -> dict:
             for s in sessions[:5]
         ]
 
+        # 商品库存（P5 可选方法：未实现/异常时跳过低库存洞察，不影响其余数据）
+        products: list[dict] = []
+        get_products = getattr(provider, "get_products", None)
+        if callable(get_products):
+            try:
+                products = get_products(None) or []
+            except Exception as exc:
+                logger.warning("商品查询失败，跳过低库存洞察: %s", exc)
+
+        kb_stats = {
+            "doc_count": 43,
+            "chunk_count": 43,
+            "retrieval_score": 90,
+        }
+
+        # Agent 今日洞察：按 warning > suggestion > info 排序取最相关的 2-3 条
+        candidates = [
+            _refund_insight(snap_data.get("refund_rate", 0), daily),
+            _stock_insight(products),
+            _knowledge_insight(kb_stats, recent_sessions),
+            _gmv_insight(today_d["gmv"], today_d["orders"]),
+        ]
+        insights = sorted(
+            (c for c in candidates if c is not None),
+            key=lambda i: INSIGHT_TYPE_RANK.get(i["type"], 9),
+        )[:3]
+        if not insights:
+            insights = [
+                {"icon": "✅", "text": "今日经营数据平稳，暂无需要关注的异常。", "type": "info"}
+            ]
+
         return {
             "kpis": kpis,
             "pending": pending,
             "recent_sessions": recent_sessions,
+            "insights": insights,
             "top_products": snap_data.get("top_products", [])[:5],
             "traffic_sources": snap_data.get("traffic_sources", {}),
-            "kb_stats": {
-                "doc_count": 43,
-                "chunk_count": 43,
-                "retrieval_score": 90,
-            },
+            "kb_stats": kb_stats,
+            "daily_trend": _daily_trend(orders),
+            "order_status_dist": _order_status_dist(orders),
+            "aftersales_dist": _aftersales_dist(aftersales),
         }
     except Exception as exc:
         logger.exception("工作台概览异常，降级为空数据: %s", exc)
@@ -149,4 +295,8 @@ async def get_workspace_summary() -> dict:
             },
             "pending": [],
             "recent_sessions": [],
+            "insights": [],
+            "daily_trend": [],
+            "order_status_dist": _order_status_dist([]),
+            "aftersales_dist": {},
         }

@@ -31,17 +31,27 @@ export async function runAgentStream(
   let text = '';
   let steps: AgentStep[] = [];
   let counter = 0;
+  // 记录每个步骤的开始时刻，step_result 到达时算出耗时
+  const stepStartedAt = new Map<string, number>();
 
   try {
     for await (const evt of streamAgent(message, history, signal)) {
       if (evt.type === 'step') {
-        steps = [...steps, { id: `step-${counter++}`, tool: evt.tool, args: evt.args, done: false }];
+        const id = `step-${counter++}`;
+        stepStartedAt.set(id, Date.now());
+        steps = [...steps, { id, tool: evt.tool, args: evt.args, done: false }];
         onUpdate({ text, steps });
       } else if (evt.type === 'step_result') {
         const next = [...steps];
         for (let i = next.length - 1; i >= 0; i--) {
           if (next[i].tool === evt.tool) {
-            next[i] = { ...next[i], summary: evt.summary, done: true };
+            const startedAt = stepStartedAt.get(next[i].id);
+            next[i] = {
+              ...next[i],
+              summary: evt.summary,
+              done: true,
+              durationMs: startedAt === undefined ? undefined : Date.now() - startedAt,
+            };
             break;
           }
         }

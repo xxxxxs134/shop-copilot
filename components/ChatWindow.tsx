@@ -543,28 +543,25 @@ export function ChatWindow() {
             {mode === 'rag' && (
               <>
           {ragEmpty && (
-            <div className="mt-16">
-              <p className="text-center text-4xl">🛒</p>
-              <p className="mt-2 text-center text-sm text-slate-400">有什么可以帮您？</p>
-              <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3">
-                {[
-                  { icon: '📦', title: '查订单', desc: '状态与物流进度', q: '帮我查一下 SO20261025010 的订单状态和物流进度' },
-                  { icon: '💰', title: '退款处理', desc: '两段式确认执行', q: 'SO20261025004 这单客户要退 80 块，帮我处理一下' },
-                  { icon: '📊', title: '经营分析', desc: '数据+建议', q: '帮我看看最近的经营数据，有什么需要改进的' },
-                  { icon: '📚', title: '规则问答', desc: 'RAG 检索+溯源', q: 'DSR 评分是怎么算的？包含哪三项？' },
-                ].map((s) => (
-                  <button
-                    key={s.title}
-                    type="button"
-                    onClick={() => setInput(s.q)}
-                    className="rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-brand-300 hover:shadow-sm"
-                  >
-                    <div className="text-2xl">{s.icon}</div>
-                    <div className="mt-2 text-sm font-medium text-slate-800">{s.title}</div>
-                    <div className="mt-0.5 text-xs text-slate-400">{s.desc}</div>
-                  </button>
-                ))}
-              </div>
+            <div className="mt-16 flex flex-wrap justify-center gap-2">
+              {[
+                { icon: '📦', title: '查订单', desc: '状态与物流进度', q: '帮我查一下 SO20261025010 的订单状态和物流进度' },
+                { icon: '💰', title: '退款处理', desc: '两段式确认执行', q: 'SO20261025004 这单客户要退 80 块，帮我处理一下' },
+                { icon: '📊', title: '经营分析', desc: '数据+建议', q: '帮我看看最近的经营数据，有什么需要改进的' },
+                { icon: '📚', title: '规则问答', desc: 'RAG 检索+溯源', q: 'DSR 评分是怎么算的？包含哪三项？' },
+              ].map((s) => (
+                <button
+                  key={s.title}
+                  type="button"
+                  onClick={() => setInput(s.q)}
+                  title={s.desc}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs transition hover:border-brand-300"
+                >
+                  <span aria-hidden="true">{s.icon}</span>
+                  <span className="font-medium text-slate-700">{s.title}</span>
+                  <span className="text-slate-400">{s.desc}</span>
+                </button>
+              ))}
             </div>
           )}
                 {messages.map((m, i) => (
@@ -593,10 +590,9 @@ export function ChatWindow() {
             {mode === 'agent' && (
               <>
                 {agentEmpty && (
-                  <div className="mt-20 text-center text-slate-400">
-                    <p className="text-4xl">🤖</p>
-                    <p className="mt-3 text-sm">试着问我：查店铺今日数据并给建议</p>
-                    <p className="mt-1 text-xs text-slate-300">
+                  <div className="mt-20 text-center text-xs text-slate-400">
+                    <p>试着问我：查店铺今日数据并给建议</p>
+                    <p className="mt-1 text-slate-300">
                       Agent 会自动调用工具：数据查询 / 知识库检索 / 文案生成 / 合规检查
                     </p>
                   </div>

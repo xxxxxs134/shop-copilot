@@ -129,7 +129,7 @@ export default function WorkspacePage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <main className="mx-auto w-full max-w-5xl space-y-6 px-6 py-6">
+      <main className="mx-auto w-full max-w-6xl space-y-4 px-6 py-6">
         {/* KPI 卡片条 */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <MetricCard
@@ -152,167 +152,176 @@ export default function WorkspacePage() {
           />
         </div>
 
-        {/* Agent 今日洞察 */}
+        {/* Agent 今日洞察（紧凑） */}
         <div>
-          <h2 className="mb-3 text-sm font-semibold text-slate-600">💡 Agent 今日洞察</h2>
-          <div className="space-y-2">
+          <h2 className="mb-2 text-sm font-semibold text-slate-600">💡 Agent 今日洞察</h2>
+          <div className="space-y-1.5">
             {(data?.insights ?? []).length ? (
               (data?.insights ?? []).map((ins) => (
                 <InsightCard key={ins.text} icon={ins.icon} text={ins.text} type={ins.type} />
               ))
             ) : (
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-center text-sm text-slate-400">
                 暂无洞察
               </div>
             )}
           </div>
         </div>
 
-        {/* Agent 发现（全宽） */}
-        <div>
-          <h2 className="mb-3 text-sm font-semibold text-slate-600">
-            🔍 Agent 发现{data?.pending.length ? ` (${data.pending.length})` : ''}
-          </h2>
-          <div className="space-y-2">
-            {data?.pending.length ? (
-              data.pending.map(({ order_id, type, amount, status, date }) => (
-                <div
-                  key={order_id + date}
-                  className="rounded-xl border border-amber-200 bg-amber-50/50 p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg">⚠️</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-800">
-                        {status === 'rejected' || status === '被拒'
-                          ? '退款申请被拒，需人工复查'
-                          : `${type}，需跟进处理`}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {order_id} · {type} · ¥{amount}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        建议：
-                        {status === 'rejected' || status === '被拒'
-                          ? '复核驳回理由是否充分、凭证是否齐全'
-                          : '确认退货物流签收情况，推进流程'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
-                      查看详情
-                    </button>
-                    <button
-                      onClick={() => handlePendingAction(order_id)}
-                      className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
-                    >
-                      处理退款
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-                暂无待处理事项
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 热销 + 流量 + 状态分布（三列） */}
+        {/* 两栏布局：左 2/3（待处理 + 三列图表 + 趋势）/ 右 1/3（最近会话 + 知识库 + 意图） */}
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-xs font-semibold text-slate-500">热销商品 Top 3</h3>
-            <BarChart
-              items={(data?.top_products ?? []).slice(0, 3).map((p) => ({
-                label: p.name,
-                value: p.sales,
-                suffix: ' 件',
-              }))}
-            />
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-xs font-semibold text-slate-500">流量来源占比</h3>
-            <BarChart
-              items={Object.entries(data?.traffic_sources ?? {}).map(([k, v]) => ({
-                label:
-                  k === 'direct'
-                    ? '直接'
-                    : k === 'paid'
-                      ? '付费'
-                      : k === 'recommend'
-                        ? '推荐'
-                        : k === 'search'
-                          ? '搜索'
-                          : k,
-                value: v,
-                suffix: '%',
-              }))}
-            />
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-xs font-semibold text-slate-500">订单状态分布</h3>
-            <DonutChart
-              data={Object.entries(data?.order_status_dist ?? {}).map(([status, value]) => ({
-                label: ORDER_STATUS_META[status]?.label ?? status,
-                value,
-                color: ORDER_STATUS_META[status]?.color ?? '#94a3b8',
-              }))}
-            />
-          </div>
-        </div>
+          {/* 左栏 */}
+          <div className="space-y-4 md:col-span-2">
+            {/* 待处理事项 */}
+            <div>
+              <h2 className="mb-3 text-sm font-semibold text-slate-600">
+                🔍 Agent 发现{data?.pending.length ? ` (${data.pending.length})` : ''}
+              </h2>
+              <div className="space-y-2">
+                {data?.pending.length ? (
+                  data.pending.map(({ order_id, type, amount, status, date }) => (
+                    <div
+                      key={order_id + date}
+                      className="rounded-xl border border-amber-200 bg-amber-50/50 p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-lg">⚠️</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-slate-800">
+                            {status === 'rejected' || status === '被拒'
+                              ? '退款申请被拒，需人工复查'
+                              : `${type}，需跟进处理`}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {order_id} · {type} · ¥{amount}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            建议：
+                            {status === 'rejected' || status === '被拒'
+                              ? '复核驳回理由是否充分、凭证是否齐全'
+                              : '确认退货物流签收情况，推进流程'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
+                          查看详情
+                        </button>
+                        <button
+                          onClick={() => handlePendingAction(order_id)}
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+                        >
+                          处理退款
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+                    暂无待处理事项
+                  </div>
+                )}
+              </div>
+            </div>
 
-        {/* 30 天趋势（全宽） */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 text-xs font-semibold text-slate-500">30 天经营趋势</h3>
-          <TrendChart data={data?.daily_trend ?? []} />
-        </div>
-
-        {/* 知识库 + 意图分布（两列） */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-xs font-semibold text-slate-500">知识库状态</h3>
-            <KbStats
-              docCount={data?.kb_stats?.doc_count ?? 0}
-              chunkCount={data?.kb_stats?.chunk_count ?? 0}
-              retrievalScore={data?.kb_stats?.retrieval_score ?? 0}
-            />
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-xs font-semibold text-slate-500">意图分布</h3>
-            <IntentDist
-              counts={
-                data?.recent_sessions.reduce(
-                  (acc, s) => {
-                    const intent = s.mode === 'agent' ? 'data' : 'knowledge';
-                    acc[intent] = (acc[intent] ?? 0) + 1;
-                    return acc;
-                  },
-                  {} as Record<string, number>,
-                ) ?? {}
-              }
-            />
-          </div>
-        </div>
-
-        {/* 最近会话（全宽，快捷操作已移入左侧导航） */}
-        <div>
-          <h2 className="mb-3 text-sm font-semibold text-slate-600">最近会话</h2>
-          <div className="space-y-1 rounded-xl border border-slate-200 bg-white py-1">
-            {data?.recent_sessions.length ? (
-              data.recent_sessions.map((s) => (
-                <RecentSession
-                  key={s.id}
-                  title={s.title}
-                  mode={s.mode}
-                  updatedAt={s.updated_at}
-                  onClick={() => handleSessionClick(s.id)}
+            {/* 热销 + 流量 + 状态分布（三列） */}
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="mb-3 text-xs font-semibold text-slate-500">热销商品 Top 3</h3>
+                <BarChart
+                  items={(data?.top_products ?? []).slice(0, 3).map((p) => ({
+                    label: p.name,
+                    value: p.sales,
+                    suffix: ' 件',
+                  }))}
                 />
-              ))
-            ) : (
-              <p className="px-3 py-4 text-center text-xs text-slate-400">暂无会话</p>
-            )}
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="mb-3 text-xs font-semibold text-slate-500">流量来源占比</h3>
+                <BarChart
+                  items={Object.entries(data?.traffic_sources ?? {}).map(([k, v]) => ({
+                    label:
+                      k === 'direct'
+                        ? '直接'
+                        : k === 'paid'
+                          ? '付费'
+                          : k === 'recommend'
+                            ? '推荐'
+                            : k === 'search'
+                              ? '搜索'
+                              : k,
+                    value: v,
+                    suffix: '%',
+                  }))}
+                />
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="mb-3 text-xs font-semibold text-slate-500">订单状态分布</h3>
+                <DonutChart
+                  data={Object.entries(data?.order_status_dist ?? {}).map(([status, value]) => ({
+                    label: ORDER_STATUS_META[status]?.label ?? status,
+                    value,
+                    color: ORDER_STATUS_META[status]?.color ?? '#94a3b8',
+                  }))}
+                />
+              </div>
+            </div>
+
+            {/* 30 天趋势 */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="mb-3 text-xs font-semibold text-slate-500">30 天经营趋势</h3>
+              <TrendChart data={data?.daily_trend ?? []} />
+            </div>
+          </div>
+
+          {/* 右栏 */}
+          <div className="space-y-4">
+            {/* 最近会话 */}
+            <div>
+              <h2 className="mb-3 text-sm font-semibold text-slate-600">最近会话</h2>
+              <div className="space-y-1 rounded-xl border border-slate-200 bg-white py-1">
+                {data?.recent_sessions.length ? (
+                  data.recent_sessions.map((s) => (
+                    <RecentSession
+                      key={s.id}
+                      title={s.title}
+                      mode={s.mode}
+                      updatedAt={s.updated_at}
+                      onClick={() => handleSessionClick(s.id)}
+                    />
+                  ))
+                ) : (
+                  <p className="px-3 py-4 text-center text-xs text-slate-400">暂无会话</p>
+                )}
+              </div>
+            </div>
+
+            {/* 知识库状态 */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="mb-3 text-xs font-semibold text-slate-500">知识库状态</h3>
+              <KbStats
+                docCount={data?.kb_stats?.doc_count ?? 0}
+                chunkCount={data?.kb_stats?.chunk_count ?? 0}
+                retrievalScore={data?.kb_stats?.retrieval_score ?? 0}
+              />
+            </div>
+
+            {/* 意图分布 */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="mb-3 text-xs font-semibold text-slate-500">意图分布</h3>
+              <IntentDist
+                counts={
+                  data?.recent_sessions.reduce(
+                    (acc, s) => {
+                      const intent = s.mode === 'agent' ? 'data' : 'knowledge';
+                      acc[intent] = (acc[intent] ?? 0) + 1;
+                      return acc;
+                    },
+                    {} as Record<string, number>,
+                  ) ?? {}
+                }
+              />
+            </div>
           </div>
         </div>
       </main>

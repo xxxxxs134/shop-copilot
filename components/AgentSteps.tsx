@@ -140,7 +140,7 @@ export function AgentSteps({ steps }: { steps: AgentStep[] }) {
         </Fragment>
       ))}
       <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-        <span>⚙️ 本次调用 {stepCount} 个工具</span>
+        <span>⚙️ 调用了 {stepCount} 个工具</span>
       </div>
     </div>
   );
@@ -158,63 +158,61 @@ function StepCard({ step }: { step: AgentStep }) {
         ? `${Math.round(step.durationMs)}ms`
         : `${(step.durationMs / 1000).toFixed(1)}s`;
 
-  // args 摘要（用于卡片副标题）
+  // args 摘要（折叠行副标题 + 展开区完整展示）
   const argsBrief = Object.entries(step.args)
     .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
     .join(' · ');
 
   // 行动类工具的办理回执（咨询即办理）
   const actionResult = parseActionResult(step);
+  // order_lookup 完成后解析 summary → 结构化订单卡片
+  const orderData =
+    step.tool === 'order_lookup' && step.done ? parseOrderData(step.summary) : null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm">{icon}</span>
-          <span className="font-medium text-slate-700">{label}</span>
-          {!step.done && (
-            <span className="inline-flex items-center gap-1 text-slate-400">
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
-              运行中
-            </span>
-          )}
-          {step.done && <span className="text-green-600">✓ 完成</span>}
-          {durationText && <span className="text-slate-400">{durationText}</span>}
-        </div>
-        {step.summary && (
-          <button
-            type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="shrink-0 text-slate-400 hover:text-slate-600"
-          >
-            {expanded ? '收起' : '详情'}
-          </button>
+    <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
+      {/* 折叠行：工具名 · 简短参数 · 状态 · 耗时（点击展开详情） */}
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <span aria-hidden="true">{icon}</span>
+        <span className="shrink-0 font-medium text-slate-700">{label}</span>
+        {argsBrief && (
+          <span className="min-w-0 truncate text-slate-400">· {argsBrief}</span>
         )}
-      </div>
-      {/* 推理理由 */}
-      <p className="mt-1 text-slate-600">💭 {reason}</p>
-      {/* args 摘要（截断显示） */}
-      {argsBrief && <p className="mt-1 truncate text-slate-500">{argsBrief}</p>}
-      {/* 展开后显示完整 result summary */}
-      {expanded && step.summary && (
-        <>
-          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 text-slate-600">
-            {typeof step.summary === 'string'
-              ? step.summary
-              : JSON.stringify(step.summary, null, 2)}
-          </pre>
-          {/* order_lookup 完成后解析 summary 渲染结构化订单卡片 */}
-          {step.tool === 'order_lookup' &&
-            step.done &&
-            (() => {
-              const data = parseOrderData(step.summary);
-              return data ? <OrderResultCard data={data} /> : null;
-            })()}
-          {/* 行动类工具完成后渲染办理回执卡片 */}
+        {!step.done && (
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-slate-400">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
+            运行中
+          </span>
+        )}
+        {step.done && <span className="ml-auto shrink-0 text-emerald-600">✓ 完成</span>}
+        {durationText && <span className="shrink-0 text-slate-400">{durationText}</span>}
+        <span aria-hidden="true" className="shrink-0 text-slate-400">
+          {expanded ? '▴' : '▾'}
+        </span>
+      </button>
+
+      {/* 展开区：推理理由 + 完整参数 + result summary + 结果卡片 */}
+      {expanded && (
+        <div className="mt-2 border-t border-slate-100 pt-2">
+          <p className="text-slate-600">💭 {reason}</p>
+          {argsBrief && <p className="mt-1 break-all text-slate-500">{argsBrief}</p>}
+          {step.summary && (
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 text-slate-600">
+              {typeof step.summary === 'string'
+                ? step.summary
+                : JSON.stringify(step.summary, null, 2)}
+            </pre>
+          )}
+          {orderData && <OrderResultCard data={orderData} />}
           {actionResult && (
             <ActionResultCard action={actionResult.action} data={actionResult.data} />
           )}
-        </>
+        </div>
       )}
     </div>
   );

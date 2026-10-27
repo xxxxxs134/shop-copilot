@@ -5,7 +5,9 @@
  *   POST /api/v1/intent   {"q": "用户问题"}
  *   → {"intent": "knowledge|data|policy|copywriting|general",
  *      "target": "rag|agent",
- *      "reason": "一句话理由（供 chip 展示）"}
+ *      "reason": "一句话理由（供 chip 展示）",
+ *      "entities": {"order_id": "SO2026…", …},          // 可选增强
+ *      "sentiment": {"label": "anxious", …}              // 可选增强}
  *
  * 走既有 /api/v1/* 同源代理（app/api/v1/[...path]/route.ts 透传 → FastAPI /v1/intent），
  * 本文件不新增任何代理代码。
@@ -16,11 +18,25 @@
 
 import type { UIMessage } from 'ai';
 
-/** /v1/intent 原始响应（三字段契约） */
+/** /v1/intent 原始响应（三字段契约 + 可选增强字段） */
 export interface IntentResponse {
   intent: string;
   target: string;
   reason: string;
+  /** 实体抽取：类型 → 文本/数值（如 order_id → "SO2026…"）；老后端无此字段 */
+  entities?: EntityMap;
+  /** 情绪识别：标签 + 置信度 + 触发线索；老后端无此字段 */
+  sentiment?: Sentiment;
+}
+
+/** 实体抽取结果：类型键（order_id/product/reason/amount/time_expr/action…）→ 文本或数值 */
+export type EntityMap = Record<string, string | number>;
+
+/** 情绪识别结果：label 为情绪标签（angry/anxious/frustrated/neutral/positive），cues 为触发线索 */
+export interface Sentiment {
+  label: string;
+  score: number;
+  cues: string[];
 }
 
 /**
@@ -50,7 +66,7 @@ export function shouldAutoSwitch(intent: string): boolean {
   return AUTO_SWITCH_INTENTS.has(intent);
 }
 
-/** 响应体校验：三个字段必须均为 string，否则视为识别失败 */
+/** 响应体校验：三个字段必须均为 string，否则视为识别失败；entities/sentiment 为可选增强，解析失败仅丢弃该字段 */
 function parseIntent(data: unknown): IntentResponse | null {
   if (typeof data !== 'object' || data === null) return null;
   const d = data as Record<string, unknown>;
@@ -61,7 +77,32 @@ function parseIntent(data: unknown): IntentResponse | null {
   ) {
     return null;
   }
-  return { intent: d.intent, target: d.target, reason: d.reason };
+  return {
+    intent: d.intent,
+    target: d.target,
+    reason: d.reason,
+    entities: parseEntities(d.entities),
+    sentiment: parseSentiment(d.sentiment),
+  };
+}
+
+/** entities 解析：Record<string, string | number>，非此形状的整体丢弃（不阻断意图主字段） */
+function parseEntities(raw: unknown): EntityMap | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const out: EntityMap = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string' || typeof value === 'number') out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** sentiment 解析：{ label: string; score: number; cues: string[] }，非此形状的整体丢弃 */
+function parseSentiment(raw: unknown): Sentiment | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.label !== 'string' || typeof s.score !== 'number') return undefined;
+  const cues = Array.isArray(s.cues) ? s.cues.filter((c): c is string => typeof c === 'string') : [];
+  return { label: s.label, score: s.score, cues };
 }
 
 /** 超时兜底：后端契约目标 <1.5s，5s 仍未返回按失败处理（不拖住发送链路） */

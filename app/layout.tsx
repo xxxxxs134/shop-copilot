@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
 
 export const metadata: Metadata = {
   title: '店智 Copilot - 电商运营 AI 智能助手',
@@ -9,7 +10,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        {/* 全局左导航：跨路由持久，点击导航仅切换右侧内容区 */}
+        <div className="flex min-h-screen">
+          <WorkspaceSidebar />
+          <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        </div>
+      </body>
     </html>
   );
 }

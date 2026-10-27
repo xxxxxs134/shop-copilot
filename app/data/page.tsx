@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefundDialog } from "@/components/RefundDialog";
+import { StatusBadge } from "@/components/StatusBadge";
 
 type Tab = "orders" | "products" | "aftersales";
 
@@ -171,7 +172,22 @@ export default function DataPage() {
                       <td key={c.key} className="px-4 py-3 text-sm text-slate-700">
                         {c.key === "amount" || c.key === "price"
                           ? `¥${row[c.key]}`
-                          : String(row[c.key] ?? "")}
+                          : c.key === "status"
+                            ? <StatusBadge status={String(row[c.key] ?? "")} />
+                            : c.key === "stock"
+                              ? (
+                                <span className={Number(row[c.key]) <= 20 ? "font-medium text-red-600" : "text-slate-700"}>
+                                  {String(row[c.key])}
+                                  {Number(row[c.key]) <= 20 && <span className="ml-1 text-[10px]">⚠ 低</span>}
+                                </span>
+                              )
+                              : c.key === "category"
+                                ? (
+                                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                                    {String(row[c.key] ?? "")}
+                                  </span>
+                                )
+                                : String(row[c.key] ?? "")}
                       </td>
                     ))}
                     <td className="px-4 py-3">

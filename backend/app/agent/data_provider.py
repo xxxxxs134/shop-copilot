@@ -267,10 +267,10 @@ _MOCK_DATA = {
 
 # P5 业务样例（内存，供 MockProvider 的 5 个可选方法使用）
 _MOCK_PRODUCTS = [
-    {"sku": "SKU1001", "name": "纯棉基础款T恤", "price": 79.9, "stock": 320, "status": "在售"},
-    {"sku": "SKU1003", "name": "桌面收纳盒", "price": 49.9, "stock": 4, "status": "在售"},   # 低库存
-    {"sku": "SKU1004", "name": "无线蓝牙耳机", "price": 199.0, "stock": 96, "status": "在售"},
-    {"sku": "SKU1012", "name": "老款帆布双肩包", "price": 99.0, "stock": 0, "status": "下架"},
+    {"sku": "SKU1001", "name": "纯棉基础款T恤", "price": 79.9, "stock": 320, "status": "在售", "category": "服装"},
+    {"sku": "SKU1003", "name": "桌面收纳盒", "price": 49.9, "stock": 4, "status": "在售", "category": "家居"},   # 低库存
+    {"sku": "SKU1004", "name": "无线蓝牙耳机", "price": 199.0, "stock": 96, "status": "在售", "category": "数码"},
+    {"sku": "SKU1012", "name": "老款帆布双肩包", "price": 99.0, "stock": 0, "status": "下架", "category": "箱包"},
 ]
 
 _MOCK_ORDERS: dict[str, dict] = {
@@ -447,13 +447,13 @@ class SqliteStoreProvider:
             if kw:
                 like = f"%{kw}%"
                 rows = conn.execute(
-                    "SELECT sku, name, price, stock, status FROM products"
+                    "SELECT sku, name, price, stock, status, category FROM products"
                     " WHERE name LIKE ? OR sku LIKE ? ORDER BY sku",
                     (like, like),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT sku, name, price, stock, status FROM products ORDER BY sku"
+                    "SELECT sku, name, price, stock, status, category FROM products ORDER BY sku"
                 ).fetchall()
             return [dict(r) for r in rows]
         finally:

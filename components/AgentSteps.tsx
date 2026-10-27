@@ -2,6 +2,8 @@
 
 import { Fragment, useState } from 'react';
 
+import { OrderResultCard } from './OrderResultCard';
+
 /** 一个 Agent 工具调用步骤（开始 + 结果） */
 export interface AgentStep {
   id: string;
@@ -46,6 +48,26 @@ const TOOL_REASONS: Record<string, string> = {
   copywriting: '生成商品文案',
   policy_check: '检查合规规则',
 };
+
+/**
+ * 解析 order_lookup 结果：summary 可能是 JSON 字符串或已解析的对象。
+ * 含 order_id 视为订单数据，否则返回 null（保持纯文本展示）。
+ */
+function parseOrderData(summary: unknown): Record<string, unknown> | null {
+  let raw: unknown;
+  if (typeof summary === 'string') {
+    try {
+      raw = JSON.parse(summary);
+    } catch {
+      return null;
+    }
+  } else {
+    raw = summary;
+  }
+  return raw !== null && typeof raw === 'object' && 'order_id' in raw
+    ? (raw as Record<string, unknown>)
+    : null;
+}
 
 /**
  * Agent 步骤卡片列表
@@ -127,9 +149,20 @@ function StepCard({ step }: { step: AgentStep }) {
       )}
       {/* 展开后显示完整 result summary */}
       {expanded && step.summary && (
-        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 text-slate-600">
-          {step.summary}
-        </pre>
+        <>
+          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 text-slate-600">
+            {typeof step.summary === 'string'
+              ? step.summary
+              : JSON.stringify(step.summary, null, 2)}
+          </pre>
+          {/* order_lookup 完成后解析 summary 渲染结构化订单卡片 */}
+          {step.tool === 'order_lookup' &&
+            step.done &&
+            (() => {
+              const data = parseOrderData(step.summary);
+              return data ? <OrderResultCard data={data} /> : null;
+            })()}
+        </>
       )}
     </div>
   );

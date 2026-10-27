@@ -31,20 +31,20 @@ PRODUCTS = [
     ("厨房置物架", 129.0),
 ]
 
-# P5 业务表种子：12 个商品（sku/name/price/stock/status，含 2 个低库存 + 1 个下架）
+# P5 业务表种子：12 个商品（sku/name/price/stock/status/category，含 2 个低库存 + 1 个下架）
 CATALOG = [
-    ("SKU1001", "纯棉基础款T恤", 79.9, 320, "在售"),
-    ("SKU1002", "便携式充电宝", 99.0, 180, "在售"),
-    ("SKU1003", "桌面收纳盒", 49.9, 4, "在售"),      # 低库存
-    ("SKU1004", "无线蓝牙耳机", 199.0, 96, "在售"),
-    ("SKU1005", "儿童保温杯", 69.0, 2, "在售"),       # 低库存
-    ("SKU1006", "厨房置物架", 129.0, 58, "在售"),
-    ("SKU1007", "遮阳伞晴雨两用", 59.0, 240, "在售"),
-    ("SKU1008", "加厚珊瑚绒毯", 129.0, 75, "在售"),
-    ("SKU1009", "不锈钢保温饭盒", 89.0, 130, "在售"),
-    ("SKU1010", "宠物自动饮水机", 159.0, 46, "在售"),
-    ("SKU1011", "LED化妆镜带灯", 119.0, 88, "在售"),
-    ("SKU1012", "老款帆布双肩包", 99.0, 0, "下架"),
+    ("SKU1001", "纯棉基础款T恤", 79.9, 320, "在售", "服装"),
+    ("SKU1002", "便携式充电宝", 99.0, 180, "在售", "数码"),
+    ("SKU1003", "桌面收纳盒", 49.9, 4, "在售", "家居"),      # 低库存
+    ("SKU1004", "无线蓝牙耳机", 199.0, 96, "在售", "数码"),
+    ("SKU1005", "儿童保温杯", 69.0, 2, "在售", "母婴"),       # 低库存
+    ("SKU1006", "厨房置物架", 129.0, 58, "在售", "家居"),
+    ("SKU1007", "遮阳伞晴雨两用", 59.0, 240, "在售", "服饰配件"),
+    ("SKU1008", "加厚珊瑚绒毯", 129.0, 75, "在售", "家纺"),
+    ("SKU1009", "不锈钢保温饭盒", 89.0, 130, "在售", "厨具"),
+    ("SKU1010", "宠物自动饮水机", 159.0, 46, "在售", "宠物"),
+    ("SKU1011", "LED化妆镜带灯", 119.0, 88, "在售", "美妆"),
+    ("SKU1012", "老款帆布双肩包", 99.0, 0, "下架", "箱包"),
 ]
 
 SCHEMA = [
@@ -76,7 +76,8 @@ SCHEMA = [
         name TEXT NOT NULL,
         price REAL NOT NULL,
         stock INTEGER NOT NULL,
-        status TEXT NOT NULL
+        status TEXT NOT NULL,
+        category TEXT NOT NULL
     )""",
     """CREATE TABLE IF NOT EXISTS orders (
         order_id TEXT PRIMARY KEY,
@@ -215,7 +216,7 @@ def build(end: date = date.today(), days: int = 30, seed: int = 42) -> None:
         # ── P5 业务表：幂等重建（与 30 天指标互不影响）──
         for tbl in BUSINESS_TABLES:
             conn.execute(f"DELETE FROM {tbl}")
-        conn.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?)", CATALOG)
+        conn.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?)", CATALOG)
         conn.executemany(
             "INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?)", _orders_seed(end)
         )

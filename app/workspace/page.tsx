@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MetricCard } from '@/components/MetricCard';
 import { InsightCard } from '@/components/InsightCard';
-import { PendingItem } from '@/components/PendingItem';
 import { RecentSession } from '@/components/RecentSession';
 import {
   BarChart,
@@ -169,23 +168,49 @@ export default function WorkspacePage() {
           </div>
         </div>
 
-        {/* 待处理事项（全宽） */}
+        {/* Agent 发现（全宽） */}
         <div>
           <h2 className="mb-3 text-sm font-semibold text-slate-600">
-            待处理事项{data?.pending.length ? ` (${data.pending.length})` : ''}
+            🔍 Agent 发现{data?.pending.length ? ` (${data.pending.length})` : ''}
           </h2>
           <div className="space-y-2">
             {data?.pending.length ? (
-              data.pending.map((p) => (
-                <PendingItem
-                  key={p.order_id + p.date}
-                  orderId={p.order_id}
-                  type={p.type}
-                  amount={p.amount}
-                  status={p.status}
-                  date={p.date}
-                  onAction={handlePendingAction}
-                />
+              data.pending.map(({ order_id, type, amount, status, date }) => (
+                <div
+                  key={order_id + date}
+                  className="rounded-xl border border-amber-200 bg-amber-50/50 p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg">⚠️</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-800">
+                        {status === 'rejected' || status === '被拒'
+                          ? '退款申请被拒，需人工复查'
+                          : `${type}，需跟进处理`}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {order_id} · {type} · ¥{amount}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        建议：
+                        {status === 'rejected' || status === '被拒'
+                          ? '复核驳回理由是否充分、凭证是否齐全'
+                          : '确认退货物流签收情况，推进流程'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
+                      查看详情
+                    </button>
+                    <button
+                      onClick={() => handlePendingAction(order_id)}
+                      className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+                    >
+                      处理退款
+                    </button>
+                  </div>
+                </div>
               ))
             ) : (
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">

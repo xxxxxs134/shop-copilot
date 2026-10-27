@@ -1,5 +1,5 @@
 /**
- * 转人工（人机协同增强）客户端
+ * 处理方案生成（运营助手）客户端
  *
  * 契约：
  *   POST /api/v1/escalate
@@ -11,7 +11,7 @@
  * 走既有 /api/v1/* 同源代理（app/api/v1/[...path]/route.ts 透传 → FastAPI /v1/escalate）。
  *
  * 降级语义：网络错误 / 非 2xx / 响应结构不符 → 一律回落本地 mock。
- * 转人工是人机协同增强信息，后端未就绪时 UI 也必须可用，绝不阻断主链路。
+ * 处理方案是运营助手信息，后端未就绪时 UI 也必须可用，绝不阻断主链路。
  */
 
 /** 建议条目：icon 为 emoji 前缀，text 为操作建议 */
@@ -26,7 +26,7 @@ export interface EscalationScript {
   text: string;
 }
 
-/** /v1/escalate 响应体（转人工卡片数据源） */
+/** /v1/escalate 响应体（处理方案卡片数据源） */
 export interface EscalationData {
   summary: string;
   suggestions: EscalationSuggestion[];
@@ -36,7 +36,7 @@ export interface EscalationData {
 /** /v1/escalate 请求体 */
 export interface EscalateRequest {
   session_id: string;
-  /** 用户填写的转人工原因；留空时由前端填 'auto' */
+  /** 用户填写的补充说明；留空时由前端填 'auto' */
   reason: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
@@ -76,8 +76,8 @@ function buildMockEscalation(req: EscalateRequest): EscalationData {
   const topic = lastUser.slice(0, 40) || '当前对话';
 
   const summary = orderId
-    ? `客户咨询订单 ${orderId} 的处理进度，最近一轮诉求：「${topic}」。已沟通 ${req.messages.length} 轮，建议人工介入跟进并同步处理节点。`
-    : `客户咨询：「${topic}」。已沟通 ${req.messages.length} 轮，建议人工核实细节后接手回复。`;
+    ? `客户咨询订单 ${orderId} 的处理进度，最近一轮诉求：「${topic}」。已沟通 ${req.messages.length} 轮，建议核对处理节点并同步进展。`
+    : `客户咨询：「${topic}」。已沟通 ${req.messages.length} 轮，建议核实细节后拟定回复。`;
 
   return {
     summary,
@@ -104,11 +104,11 @@ function buildMockEscalation(req: EscalateRequest): EscalationData {
   };
 }
 
-/** 超时兜底：转人工摘要生成目标 <5s，10s 仍未返回按失败处理（走 mock） */
+/** 超时兜底：处理方案生成目标 <5s，10s 仍未返回按失败处理（走 mock） */
 const ESCALATE_TIMEOUT_MS = 10000;
 
 /**
- * 发起转人工请求。**永不抛出**：任何失败路径都回落 mock 卡片。
+ * 发起处理方案生成请求。**永不抛出**：任何失败路径都回落 mock 卡片。
  */
 export async function requestEscalation(req: EscalateRequest): Promise<EscalationData> {
   const controller = new AbortController();

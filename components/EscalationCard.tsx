@@ -4,9 +4,9 @@ import { useState } from 'react';
 import type { EscalationData } from '@/lib/escalateClient';
 
 /**
- * 转人工结果卡片（人机协同增强）
+ * 处理方案卡片（运营助手工具）
  *
- * 布局：emerald 主题头部 → 📋 上下文摘要 → 💡 下一步建议（浅底卡片）→ 📝 话术辅助（可复制文本块）。
+ * 布局：emerald 主题头部 → 📋 情况摘要 → 💡 建议动作（浅底卡片）→ 📝 可复制话术（可复制文本块）。
  * 由 ChatWindow 在消息区以「系统消息式卡片」渲染；✕ 由父级清空状态关闭。
  */
 export function EscalationCard({ data, onClose }: {
@@ -37,10 +37,7 @@ export function EscalationCard({ data, onClose }: {
     <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-sm">
       {/* 头部（emerald/teal 主题） */}
       <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-50 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span aria-hidden>🤝</span>
-          <h3 className="text-sm font-semibold text-emerald-800">转人工请求已生成</h3>
-        </div>
+        <h3 className="text-sm font-semibold text-emerald-800">📋 处理方案</h3>
         <button
           type="button"
           onClick={onClose}
@@ -51,17 +48,17 @@ export function EscalationCard({ data, onClose }: {
         </button>
       </div>
 
-      {/* 📋 上下文摘要 */}
+      {/* 📋 情况摘要 */}
       <div className="border-b border-slate-100 px-4 py-3">
-        <p className="text-xs font-medium text-slate-500">📋 上下文摘要</p>
+        <p className="text-xs font-medium text-slate-500">📋 情况摘要</p>
         <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
           {data.summary}
         </p>
       </div>
 
-      {/* 💡 下一步建议（浅底卡片） */}
+      {/* 💡 建议动作（浅底卡片） */}
       <div className="border-b border-slate-100 px-4 py-3">
-        <p className="text-xs font-medium text-slate-500">💡 下一步建议</p>
+        <p className="text-xs font-medium text-slate-500">💡 建议动作</p>
         <ul className="mt-1.5 space-y-1.5">
           {data.suggestions.map((s, i) => (
             <li
@@ -75,9 +72,9 @@ export function EscalationCard({ data, onClose }: {
         </ul>
       </div>
 
-      {/* 📝 话术辅助（可复制文本块） */}
+      {/* 📝 可复制话术（可复制文本块） */}
       <div className="px-4 py-3">
-        <p className="text-xs font-medium text-slate-500">📝 话术辅助</p>
+        <p className="text-xs font-medium text-slate-500">📝 可复制话术</p>
         <div className="mt-1.5 space-y-2">
           {data.scripts.map((sc, i) => (
             <div key={i} className="rounded-lg border border-slate-200 p-3">

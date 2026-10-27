@@ -48,7 +48,7 @@ function uiText(m: UIMessage): string {
  * - 引用：[n] 角标点击 → ragSearch（同序来源）→ CitationCard 溯源
  * - 意图分流（P5 §2.2）：发送时与回答并行识别意图 → 气泡上方 chip；
  *   RAG 模式遇 data/policy/copywriting 自动切 Agent，Agent 模式永不回切
- * - 转人工（人机协同增强）：汇总上下文 → /api/v1/escalate → 摘要/建议/话术卡片（后端未就绪 mock 兜底）
+ * - 处理方案生成（运营助手）：汇总上下文 → /api/v1/escalate → 摘要/建议/话术卡片（后端未就绪 mock 兜底）
  */
 export function ChatWindow() {
   const [input, setInput] = useState('');
@@ -131,7 +131,7 @@ export function ChatWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 转人工（人机协同增强）：汇总当前会话 → /api/v1/escalate → 结果卡片 ──
+  // ── 处理方案生成（运营助手）：汇总当前会话 → /api/v1/escalate → 结果卡片 ──
   const [escalation, setEscalation] = useState<EscalationData | null>(null);
   const [escalateOpen, setEscalateOpen] = useState(false);
   const [escalating, setEscalating] = useState(false);
@@ -436,7 +436,7 @@ export function ChatWindow() {
     sessions.clearError();
   }
 
-  // ── 转人工（人机协同增强）：状态见上，此处为收集与提交逻辑 ──
+  // ── 处理方案生成（运营助手）：状态见上，此处为收集与提交逻辑 ──
   /** 当前模式的消息拍平为 {role, content}（与 routeToAgent 转换口径一致） */
   function collectTranscript(): Array<{ role: 'user' | 'assistant'; content: string }> {
     const payload: Array<UIMessage | AgentMessage> = mode === 'rag' ? messages : agentMessages;
@@ -449,7 +449,7 @@ export function ChatWindow() {
     return out;
   }
 
-  /** 确认转人工：调 escalate（后端未就绪自动 mock 兜底）→ 消息区渲染结果卡片 */
+  /** 生成处理方案：调 escalate（后端未就绪自动 mock 兜底）→ 消息区渲染结果卡片 */
   async function handleEscalate(reason: string) {
     setEscalating(true);
     try {
@@ -524,15 +524,15 @@ export function ChatWindow() {
                   Agent 模式
                 </button>
               </div>
-              {/* 转人工（人机协同增强） */}
+              {/* 生成处理方案（运营助手） */}
               <button
                 type="button"
                 onClick={() => setEscalateOpen(true)}
                 disabled={escalating}
-                title="人机协同增强：生成转人工摘要与话术"
+                title="运营助手：生成情况摘要、建议动作与可复制话术"
                 className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {escalating ? '生成中…' : '🤝 转人工'}
+                {escalating ? '生成中…' : '📋 生成处理方案'}
               </button>
               <span className="rounded-full bg-brand-50 px-3 py-1 text-xs text-brand-700">DeepSeek</span>
             </div>
@@ -626,7 +626,7 @@ export function ChatWindow() {
               </>
             )}
 
-            {/* 转人工结果卡片（系统消息式，✕ 关闭） */}
+            {/* 处理方案卡片（系统消息式，✕ 关闭） */}
             {escalation && (
               <EscalationCard data={escalation} onClose={() => setEscalation(null)} />
             )}
@@ -756,7 +756,7 @@ export function ChatWindow() {
         />
       )}
 
-      {/* 转人工确认对话框 */}
+      {/* 生成处理方案确认对话框 */}
       {escalateOpen && (
         <EscalateDialog
           pending={escalating}

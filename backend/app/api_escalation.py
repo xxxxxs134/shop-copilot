@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""人机协同增强 API（human-in-the-loop）：POST /v1/escalate + GET /v1/escalation/stats。
+"""处理方案生成 API（运营助手）：POST /v1/escalate + GET /v1/escalation/stats。
 
-Agent 会话升级人工坐席时调用，毫秒级返回上下文摘要与坐席辅助建议
+运营助手生成处理方案时调用，毫秒级返回情况摘要与建议动作
 （纯启发式分析消息内容，不调用 LLM）：
     POST /v1/escalate         {session_id, reason, messages} → {summary, suggestions, scripts}
     GET  /v1/escalation/stats                              → {total, pending, resolved, avg_resolution_minutes}
@@ -20,7 +20,7 @@ router = APIRouter()
 
 # ────────────────────────────── 启发式规则表 ──────────────────────────────
 
-# 业务关键词（场景判定）与情绪关键词（摘要修饰），按升级紧迫度排序
+# 业务关键词（场景判定）与情绪关键词（摘要修饰），按处理紧迫度排序
 _SCENE_KEYWORDS = ("退款", "退货", "物流", "地址")
 _EMOTION_KEYWORDS = ("投诉",)
 
@@ -96,8 +96,8 @@ _SCENE_SCRIPTS: dict[str, list[tuple[str, str]]] = {
 _ORDER_RE = re.compile(r"SO\d{6,}", re.IGNORECASE)
 _TICKET_RE = re.compile(r"售后单\s*#?\s*(\d+)")
 
-# demo 级内存计数器（进程重启清零）：escalate 时累加 total/pending，
-# resolved/avg 由人工处理完成后的回写流程更新（暂未接入端点）。
+# demo 级内存计数器（进程重启清零）：生成处理方案时累加 total/pending，
+# resolved/avg 由处理完成后的回写流程更新（暂未接入端点）。
 _stats: dict[str, float] = {
     "total": 0,
     "pending": 0,
@@ -115,7 +115,7 @@ class EscalateMessage(BaseModel):
 
 class EscalateRequest(BaseModel):
     session_id: str = Field("", description="会话 ID")
-    reason: str = Field("", description="升级人工的原因")
+    reason: str = Field("", description="生成处理方案的补充说明")
     messages: list[EscalateMessage] = Field(default_factory=list, description="会话消息")
 
 
@@ -185,7 +185,7 @@ def _build_summary(analysis: _Analysis, reason: str, message_count: int) -> str:
         if "投诉" in analysis.keywords and analysis.scene != "投诉":
             summary += "，客户表达了投诉意向"
     if reason.strip():
-        summary += f"。升级原因：{reason.strip()}"
+        summary += f"。补充说明：{reason.strip()}"
     else:
         summary += "。"
     return summary
@@ -210,20 +210,20 @@ def _build_payload(analysis: _Analysis, reason: str, message_count: int) -> dict
 def _fallback_payload() -> dict:
     """任何异常下的兜底响应（约束：接口永不 500）。"""
     return {
-        "summary": "升级上下文生成异常，已返回默认摘要，请人工直接查看完整会话记录。",
+        "summary": "处理方案生成异常，已返回默认摘要，请直接查看完整会话记录。",
         "suggestions": [
-            {"icon": "🔍", "text": "人工浏览完整会话记录，确认客户核心诉求"},
-            {"icon": "💬", "text": "主动联系客户，说明已转人工跟进处理"},
+            {"icon": "🔍", "text": "复盘完整会话记录，确认客户核心诉求"},
+            {"icon": "💬", "text": "主动联系客户，同步当前处理方案与后续安排"},
         ],
         "scripts": [
-            {"scenario": "承接诉求", "text": "您好，您的问题已转交人工客服跟进，我们会尽快为您处理并同步结果。"},
+            {"scenario": "承接诉求", "text": "您好，您的问题已经记录，我们正在为您加急处理，稍后为您同步处理结果。"},
         ],
     }
 
 
 # ────────────────────────────── 端点 ──────────────────────────────
 
-@router.post("/v1/escalate", summary="人机协同：生成升级上下文摘要与坐席建议")
+@router.post("/v1/escalate", summary="处理方案生成：返回情况摘要、建议动作与可复制话术")
 async def escalate(body: EscalateRequest) -> dict:
     try:
         analysis = _analyze(body.messages)
@@ -232,11 +232,11 @@ async def escalate(body: EscalateRequest) -> dict:
         _stats["pending"] += 1
         return result
     except Exception as exc:
-        logger.exception("升级上下文生成异常: %s", exc)
+        logger.exception("处理方案生成异常: %s", exc)
         return _fallback_payload()
 
 
-@router.get("/v1/escalation/stats", summary="升级工单统计（demo 级内存计数）")
+@router.get("/v1/escalation/stats", summary="处理方案统计（demo 级内存计数）")
 async def escalation_stats() -> dict:
     try:
         return {
@@ -246,5 +246,5 @@ async def escalation_stats() -> dict:
             "avg_resolution_minutes": float(_stats["avg_resolution_minutes"]),
         }
     except Exception as exc:
-        logger.exception("升级统计读取异常: %s", exc)
+        logger.exception("处理方案统计读取异常: %s", exc)
         return {"total": 0, "pending": 0, "resolved": 0, "avg_resolution_minutes": 0.0}

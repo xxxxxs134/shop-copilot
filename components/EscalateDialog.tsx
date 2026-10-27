@@ -3,9 +3,9 @@
 import { useState } from 'react';
 
 /**
- * 转人工确认对话框（人机协同增强入口）
+ * 生成处理方案确认对话框（运营助手入口）
  *
- * 填写转人工原因（选填）→ 确认后由 ChatWindow 调 /api/v1/escalate 生成摘要/建议/话术。
+ * 填写补充说明（选填）→ 确认后由 ChatWindow 调 /api/v1/escalate 生成情况摘要/建议动作/可复制话术。
  * 生成期间按钮显示「生成中…」并禁用（与 RefundDialog 加载态一致）。
  */
 export function EscalateDialog({
@@ -30,7 +30,7 @@ export function EscalateDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">转人工</h2>
+          <h2 className="text-lg font-bold text-slate-800">生成处理方案</h2>
           <button
             type="button"
             onClick={onClose}
@@ -42,19 +42,19 @@ export function EscalateDialog({
         </div>
 
         <p className="text-sm leading-relaxed text-slate-600">
-          人机协同增强：系统将汇总当前会话上下文，生成转人工摘要、下一步建议与话术辅助，供人工客服接手。
+          系统将汇总当前会话上下文，生成情况摘要、建议动作与可复制话术，辅助你快速制定处理方案。
         </p>
 
         <div className="mt-4">
           <label htmlFor="escalate-reason" className="mb-1 block text-sm text-slate-500">
-            转人工原因（选填）
+            补充说明（选填）
           </label>
           <textarea
             id="escalate-reason"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
-            placeholder="如：客户情绪激动 / 需要主管介入 / 退款争议…"
+            placeholder="如：客户情绪激动 / 退款争议 / 需要重点跟进…"
             className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-400"
           />
         </div>
@@ -74,7 +74,7 @@ export function EscalateDialog({
             disabled={pending}
             className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {pending ? '生成中…' : '确认转人工'}
+            {pending ? '生成中…' : '生成处理方案'}
           </button>
         </div>
       </div>

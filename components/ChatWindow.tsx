@@ -551,7 +551,7 @@ export function ChatWindow() {
             <div className="mt-16 flex flex-wrap justify-center gap-2">
               {[
                 { icon: '📦', title: '查订单', desc: '状态与物流进度', q: '帮我查一下 SO20261027010 的订单状态和物流进度' },
-                { icon: '💰', title: '退款处理', desc: '两段式确认执行', q: 'SO20261027016 这单客户要退 80 块，帮我处理一下' },
+                { icon: '💰', title: '退款处理', desc: '两段式确认执行', q: '帮我把 SO20261027016 这单全额退款 199 元，走退款流程' },
                 { icon: '📊', title: '经营分析', desc: '数据+建议', q: '帮我看看最近的经营数据，有什么需要改进的' },
                 { icon: '📚', title: '规则问答', desc: 'RAG 检索+溯源', q: 'DSR 评分是怎么算的？包含哪三项？' },
               ].map((s) => (

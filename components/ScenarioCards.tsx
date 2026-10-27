@@ -19,7 +19,7 @@ const SCENARIOS: readonly Scenario[] = [
     icon: '💰',
     title: '退款处理',
     description: '校验规则后预览执行退款，出售后回执',
-    question: 'SO20261027016 这单客户要退 80 块，帮我处理一下',
+    question: '帮我把 SO20261027016 这单全额退款 199 元，走退款流程',
   },
   {
     icon: '📊',

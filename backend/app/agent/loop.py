@@ -37,6 +37,11 @@ AGENT_SYSTEM = """你是店智 Copilot，一位专业电商运营 AI 助手。
 - 用简洁中文回答，结构清晰，重点突出
 - 数据解读要给出可操作的下一步建议
 
+【情绪感知】
+- 如果用户表现出焦虑/愤怒/无奈，回复开头先用一句话安抚（如"非常理解您的着急"、"很抱歉给您带来不好的体验"）
+- 安抚后立刻给出解决方案，不要只说空话
+- 如果情绪极其激动，建议转人工处理
+
 当前可用工具：
 - kb_search：知识库检索（平台规则、运营方法论）
 - data_query：查询店铺经营数据（GMV/订单/访客/转化率/退款率/热销品/流量来源）
@@ -44,10 +49,22 @@ AGENT_SYSTEM = """你是店智 Copilot，一位专业电商运营 AI 助手。
 - policy_check：检查运营场景是否违规
 """
 
+# 平静/缺省情绪不注入提示；其余标签在用户消息前加系统提示，引导模型先安抚再办事
+_CALM_SENTIMENTS = frozenset({"", "calm", "neutral", "normal", "none", "平静", "正常", "无"})
+
+
+def _sentiment_prefix(sentiment: str | None) -> str:
+    """用户消息前的情绪系统提示；平静/缺省返回空串。"""
+    label = (sentiment or "").strip()
+    if label.lower() in _CALM_SENTIMENTS:
+        return ""
+    return f"[系统提示：用户情绪={label}，建议先安抚]\n"
+
 
 async def run_agent(
     user_text: str,
     history: list[dict],
+    sentiment: str | None = None,
 ) -> AsyncIterator[dict]:
     """ReAct 主循环，产出事件字典流（供 SSE 序列化）。"""
     if not DEEPSEEK_API_KEY:
@@ -57,7 +74,7 @@ async def run_agent(
     messages = [
         {"role": "system", "content": AGENT_SYSTEM},
         *history,
-        {"role": "user", "content": user_text},
+        {"role": "user", "content": _sentiment_prefix(sentiment) + user_text},
     ]
     tools = list_schemas()
 

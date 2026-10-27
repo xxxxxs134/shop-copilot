@@ -302,9 +302,13 @@ async def agent_chat(request: Request):
 
     history = body.get("history") or []
 
+    # 可选：前端情绪标注（如 "焦虑"），非字符串/缺省一律视为无情绪
+    raw_sentiment = body.get("sentiment")
+    sentiment = raw_sentiment.strip() if isinstance(raw_sentiment, str) else None
+
     async def event_stream():
         try:
-            async for event in run_agent(user_text, history):
+            async for event in run_agent(user_text, history, sentiment):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as exc:  # noqa: BLE001 — 兜底，不让 SSE 中断
             err = {"type": "error", "message": f"Agent 内部错误: {exc}"}

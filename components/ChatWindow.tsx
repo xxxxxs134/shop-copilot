@@ -8,7 +8,10 @@ import { AgentSteps } from './AgentSteps';
 import { Sidebar } from './Sidebar';
 import { CitationCard } from './CitationCard';
 import { OrderDetailCard } from './OrderDetailCard';
+import { EscalationCard } from './EscalationCard';
+import { EscalateDialog } from './EscalateDialog';
 import { runAgentStream } from '@/lib/agentRun';
+import { requestEscalation, type EscalationData } from '@/lib/escalateClient';
 import { useSessions } from '@/lib/useSessions';
 import { ragSearch, type AgentMessage, type CitationSource } from '@/lib/sessionsClient';
 import {
@@ -44,6 +47,7 @@ function uiText(m: UIMessage): string {
  * - 引用：[n] 角标点击 → ragSearch（同序来源）→ CitationCard 溯源
  * - 意图分流（P5 §2.2）：发送时与回答并行识别意图 → 气泡上方 chip；
  *   RAG 模式遇 data/policy/copywriting 自动切 Agent，Agent 模式永不回切
+ * - 转人工（人机协同增强）：汇总上下文 → /api/v1/escalate → 摘要/建议/话术卡片（后端未就绪 mock 兜底）
  */
 export function ChatWindow() {
   const [input, setInput] = useState('');
@@ -125,12 +129,16 @@ export function ChatWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── 转人工（人机协同增强）：汇总当前会话 → /api/v1/escalate → 结果卡片 ──
+  const [escalation, setEscalation] = useState<EscalationData | null>(null);
+  const [escalateOpen, setEscalateOpen] = useState(false);
+  const [escalating, setEscalating] = useState(false);
+
   // 自动滚动（新内容且用户贴底时）
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, agentMessages, status, agentStreaming]);
-
+  }, [messages, agentMessages, status, agentStreaming, escalation]);
   // ── 引用溯源（P4）：按「本轮 user 消息」懒加载 ragSearch，会话内缓存 ──
   const [citation, setCitation] = useState<{ n: number; sources: CitationSource[] | null } | null>(
     null,
@@ -426,6 +434,36 @@ export function ChatWindow() {
     sessions.clearError();
   }
 
+  // ── 转人工（人机协同增强）：状态见上，此处为收集与提交逻辑 ──
+  /** 当前模式的消息拍平为 {role, content}（与 routeToAgent 转换口径一致） */
+  function collectTranscript(): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const payload: Array<UIMessage | AgentMessage> = mode === 'rag' ? messages : agentMessages;
+    const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const m of payload) {
+      const content = 'parts' in m ? uiText(m) : m.content;
+      if (!content.trim()) continue;
+      out.push({ role: m.role === 'user' ? 'user' : 'assistant', content });
+    }
+    return out;
+  }
+
+  /** 确认转人工：调 escalate（后端未就绪自动 mock 兜底）→ 消息区渲染结果卡片 */
+  async function handleEscalate(reason: string) {
+    setEscalating(true);
+    try {
+      const data = await requestEscalation({
+        session_id: sessions.activeId ?? 'local-session',
+        reason: reason.trim() || 'auto',
+        messages: collectTranscript(),
+      });
+      setEscalation(data);
+      setEscalateOpen(false);
+      stickRef.current = true;
+    } finally {
+      setEscalating(false);
+    }
+  }
+
   const ragEmpty = messages.length === 0;
   const agentEmpty = agentMessages.length === 0;
 
@@ -481,6 +519,16 @@ export function ChatWindow() {
                   Agent 模式
                 </button>
               </div>
+              {/* 转人工（人机协同增强） */}
+              <button
+                type="button"
+                onClick={() => setEscalateOpen(true)}
+                disabled={escalating}
+                title="人机协同增强：生成转人工摘要与话术"
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {escalating ? '生成中…' : '🤝 转人工'}
+              </button>
               <span className="rounded-full bg-brand-50 px-3 py-1 text-xs text-brand-700">DeepSeek</span>
             </div>
           </header>
@@ -575,6 +623,11 @@ export function ChatWindow() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* 转人工结果卡片（系统消息式，✕ 关闭） */}
+            {escalation && (
+              <EscalationCard data={escalation} onClose={() => setEscalation(null)} />
             )}
           </div>
 
@@ -699,6 +752,15 @@ export function ChatWindow() {
           source={citation.sources ? citation.sources[citation.n - 1] ?? null : null}
           loading={citeLoading}
           onClose={() => setCitation(null)}
+        />
+      )}
+
+      {/* 转人工确认对话框 */}
+      {escalateOpen && (
+        <EscalateDialog
+          pending={escalating}
+          onSubmit={(reason) => void handleEscalate(reason)}
+          onClose={() => setEscalateOpen(false)}
         />
       )}
     </div>

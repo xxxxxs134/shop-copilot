@@ -12,6 +12,11 @@ P5 扩展（docs/plan-p5.md §3.2）：Protocol 新增 5 个**可选**方法
 - 未实现这些方法的老 Provider 不会崩：工具层经 products_json 等包装函数
   降级返回 {"ok": false, "error": "..."}；get_snapshot 契约保持不变。
 
+咨询即办理扩展：Protocol 再增 3 对可选两段式方法（与退款同一令牌模式，TTL 10 分钟、一次性）
+- validate_address / execute_address —— 修改订单地址（仅 paid 未发货可改，重复 execute 幂等）
+- validate_intercept / execute_intercept —— 拦截物流（仅 shipped，每单限拦一次）
+- validate_return / execute_return —— 生成退换货单据（received 且 7 天退货期内）
+
 切换：backend/.env 中 DATA_PROVIDER=sqlite|mock（默认 sqlite）
 """
 
@@ -22,7 +27,7 @@ import os
 import sqlite3
 import time
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -30,6 +35,7 @@ STORE_DB = Path(__file__).resolve().parents[3] / "data" / "store.db"
 
 REFUND_TOKEN_TTL = 600      # 退款确认令牌有效期：10 分钟（内存 dict，跨轮对话复用）
 REFUND_WINDOW_DAYS = 7      # 售后期：下单后 7 天内可自助退款
+ACTION_TOKEN_TTL = 600      # 办理确认令牌有效期：10 分钟（咨询即办理，与退款令牌同规格）
 
 
 class DataProvider(Protocol):
@@ -53,6 +59,19 @@ class DataProvider(Protocol):
     def validate_refund(self, order_id: str, amount: float | int | str | None = None) -> dict: ...
 
     def execute_refund(self, order_id: str, token: str) -> dict: ...
+
+    # ── 咨询即办理可选方法（改地址/拦物流/退换货，两段式）──
+    def validate_address(self, order_id: str, new_address: str) -> dict: ...
+
+    def execute_address(self, order_id: str, token: str) -> dict: ...
+
+    def validate_intercept(self, order_id: str) -> dict: ...
+
+    def execute_intercept(self, order_id: str, token: str) -> dict: ...
+
+    def validate_return(self, order_id: str, return_type: str, reason: str) -> dict: ...
+
+    def execute_return(self, order_id: str, token: str) -> dict: ...
 
 
 # ────────────────── 退款两段式共用逻辑（Mock / Sqlite 通用） ─────────────────
@@ -226,6 +245,255 @@ def _run_execute(
     }
 
 
+# ────────────────── 咨询即办理两段式共用逻辑（Mock / Sqlite 通用） ─────────────────
+
+_action_tokens: dict[str, dict] = {}  # token → {kind, order_id, payload, expires_at, receipt?}（进程内存）
+
+
+def _issue_action_token(kind: str, order_id: str, payload: dict) -> str:
+    """签发办理确认令牌（TTL 10 分钟）；顺带清理过期项，避免内存泄漏。"""
+    now = time.time()
+    for stale in [t for t, rec in _action_tokens.items() if rec["expires_at"] <= now]:
+        del _action_tokens[stale]
+    token = uuid.uuid4().hex[:12]
+    _action_tokens[token] = {
+        "kind": kind,
+        "order_id": order_id,
+        "payload": payload,
+        "expires_at": now + ACTION_TOKEN_TTL,
+    }
+    return token
+
+
+def _verify_action_token(token: str, kind: str, order_id: str) -> str | None:
+    """校验令牌：存在 / 未过期 / 未执行 / 种类与订单匹配。通过返回 None，否则返回违规原因。"""
+    rec = _action_tokens.get(token)
+    if rec is None or rec.get("receipt"):
+        return "无效或已使用的令牌（不存在或已执行），请重新发起 validate"
+    if rec["expires_at"] <= time.time():
+        del _action_tokens[token]
+        return f"令牌已过期（有效期 {ACTION_TOKEN_TTL // 60} 分钟），请重新发起 validate"
+    if rec["kind"] != kind:
+        return f"令牌类型不匹配（令牌用于 {rec['kind']}，当前 {kind}）"
+    if rec["order_id"] != order_id:
+        return f"令牌与订单不匹配（令牌对应 {rec['order_id']}，当前 {order_id}）"
+    return None
+
+
+def _consume_action_token(token: str, receipt: dict) -> None:
+    """一次性消费：执行成功即记录回执（重复 execute 凭此走幂等分支），到期随 TTL 清理。"""
+    rec = _action_tokens.get(token)
+    if rec is not None:
+        rec["receipt"] = receipt
+
+
+# ── 修改订单地址（modify_address）──
+
+def _run_address_validate(order: dict | None, new_address: object) -> dict:
+    """改地址 validate 段：订单存在 / paid 未发货 / 新地址非空 → 发令牌 + 预览。"""
+    if order is None:
+        return {"ok": False, "violations": ["订单不存在或无权查询"]}
+    violations: list[str] = []
+    status = str(order.get("status", ""))
+    if status == "unpaid":
+        violations.append("订单未付款，无法修改收货地址")
+    elif status == "shipped":
+        violations.append("订单已发货，无法修改收货地址")
+    elif status != "paid":
+        violations.append(f"订单当前状态为 {status}，无法修改收货地址")
+    new_addr = str(new_address or "").strip()
+    if not new_addr:
+        violations.append("新收货地址不能为空")
+    if violations:
+        return {"ok": False, "violations": violations}
+    old_address = str(order.get("address") or "")
+    token = _issue_action_token("address", str(order["order_id"]), {"new_address": new_addr})
+    return {
+        "ok": True,
+        "needs_confirm": True,
+        "token": token,
+        "preview": {
+            "order_id": order.get("order_id"),
+            "old_address": old_address,
+            "new_address": new_addr,
+        },
+    }
+
+
+def _run_address_execute(
+    order: dict | None,
+    token: str | None,
+    commit: Callable[[str], None],
+) -> dict:
+    """execute 段：幂等检查（已执行令牌）→ 令牌校验 → commit 落库 → 回执。
+
+    commit(new_address) 由各 Provider 实现（UPDATE orders.address）；
+    新地址取 validate 时锁定在令牌里的值，不信任 execute 传参。
+    """
+    if order is None:
+        return {"ok": False, "violations": ["订单不存在或无权查询"]}
+    rec = _action_tokens.get(token or "")
+    if rec is not None and rec.get("receipt"):
+        return {
+            "ok": True,
+            "idempotent": True,
+            "message": "已修改地址",
+            "receipt": {**rec["receipt"], "note": "该订单此前已修改地址，本次为幂等回执，未重复修改"},
+        }
+    if not token:
+        return {"ok": False, "violations": ['缺少 token：请先调用 modify_address(action="validate") 获取确认令牌']}
+    err = _verify_action_token(token, "address", str(order["order_id"]))
+    if err:
+        return {"ok": False, "violations": [err]}
+    new_address = str(_action_tokens[token]["payload"]["new_address"])
+    old_address = str(order.get("address") or "")
+    modified_at = date.today().isoformat()
+    commit(new_address)
+    receipt = {
+        "order_id": order["order_id"],
+        "old_address": old_address,
+        "new_address": new_address,
+        "modified_at": modified_at,
+    }
+    _consume_action_token(token, receipt)
+    return {"ok": True, "message": "地址修改成功", "receipt": receipt}
+
+
+# ── 拦截物流（intercept_logistics）──
+
+def _run_intercept_validate(order: dict | None) -> dict:
+    """拦物流 validate 段：订单存在 / shipped 且未拦截过 → 发令牌 + 预览。"""
+    if order is None:
+        return {"ok": False, "violations": ["订单不存在或无权查询"]}
+    violations: list[str] = []
+    status = str(order.get("status", ""))
+    if status == "intercepted":
+        violations.append("该订单物流已拦截，请勿重复拦截")
+    elif status == "received":
+        violations.append("包裹已签收，无法拦截物流")
+    elif status != "shipped":
+        violations.append(f"订单当前状态为 {status}，仅已发货订单可拦截物流")
+    if violations:
+        return {"ok": False, "violations": violations}
+    token = _issue_action_token("intercept", str(order["order_id"]), {})
+    return {
+        "ok": True,
+        "needs_confirm": True,
+        "token": token,
+        "preview": {
+            "order_id": order.get("order_id"),
+            "carrier": order.get("carrier") or "",
+            "tracking_no": order.get("tracking_no") or "",
+            "status": status,
+        },
+    }
+
+
+def _run_intercept_execute(
+    order: dict | None,
+    token: str | None,
+    commit: Callable[[], None],
+) -> dict:
+    """execute 段：重复拦截检查（每单限一次）→ 令牌校验 → commit 落库 → 回执。"""
+    if order is None:
+        return {"ok": False, "violations": ["订单不存在或无权查询"]}
+    if str(order.get("status", "")) == "intercepted":
+        return {"ok": False, "violations": ["该订单物流已拦截，请勿重复拦截"]}
+    if not token:
+        return {"ok": False, "violations": ['缺少 token：请先调用 intercept_logistics(action="validate") 获取确认令牌']}
+    err = _verify_action_token(token, "intercept", str(order["order_id"]))
+    if err:
+        return {"ok": False, "violations": [err]}
+    intercepted_at = date.today().isoformat()
+    commit()
+    receipt = {
+        "order_id": order["order_id"],
+        "intercepted_at": intercepted_at,
+        "new_status": "已拦截",
+    }
+    _consume_action_token(token, receipt)
+    return {"ok": True, "message": "物流拦截成功", "receipt": receipt}
+
+
+# ── 生成退换货单据（return_exchange）──
+
+def _run_return_validate(
+    order: dict | None,
+    return_type: object,
+    reason: object,
+    has_active_aftersales: bool,
+) -> dict:
+    """退换货 validate 段：订单存在 / received / 退货期内 / 参数合法 / 无进行中售后 → 发令牌 + 预览。"""
+    if order is None:
+        return {"ok": False, "violations": ["订单不存在或无权查询"]}
+    violations: list[str] = []
+    status = str(order.get("status", ""))
+    if status == "unpaid":
+        violations.append("订单未付款，无法办理退换货")
+    elif status == "shipped":
+        violations.append("订单已发货但尚未确认收货，请先确认收货或拦截物流")
+    elif status != "received":
+        violations.append(f"订单当前状态为 {status}，无法办理退换货")
+    rtype = str(return_type or "").strip()
+    if rtype not in ("退货退款", "换货"):
+        violations.append(f"return_type 必须是 退货退款 或 换货，收到: {return_type!r}")
+    rtext = str(reason or "").strip()
+    if not rtext:
+        violations.append("退换货原因不能为空")
+    if has_active_aftersales:
+        violations.append("该订单已有进行中的售后单据，请勿重复发起")
+    if not _within_refund_window(str(order.get("created_at", ""))):
+        violations.append(f"订单已超过 {REFUND_WINDOW_DAYS} 天退货期，无法自助办理退换货")
+    if violations:
+        return {"ok": False, "violations": violations}
+    amount = round(float(order.get("amount") or 0), 2)
+    token = _issue_action_token("return", str(order["order_id"]), {
+        "return_type": rtype, "reason": rtext, "refund_amount": amount,
+    })
+    return {
+        "ok": True,
+        "needs_confirm": True,
+        "token": token,
+        "preview": {
+            "order_id": order.get("order_id"),
+            "return_type": rtype,
+            "reason": rtext,
+            "refund_amount": amount,
+        },
+    }
+
+
+def _run_return_execute(
+    order: dict | None,
+    token: str | None,
+    has_active_aftersales: bool,
+    commit: Callable[[dict], int],
+) -> dict:
+    """execute 段：重复发起检查 → 令牌校验 → commit 落库（aftersales 建单）→ 回执。
+
+    commit(payload) 由各 Provider 实现（INSERT aftersales，状态「待寄回」），返回单据 id；
+    退货类型/原因/金额取 validate 时锁定在令牌里的值，不信任 execute 传参。
+    """
+    if order is None:
+        return {"ok": False, "violations": ["订单不存在或无权查询"]}
+    if has_active_aftersales:
+        return {"ok": False, "violations": ["该订单已有进行中的售后单据，请勿重复发起"]}
+    if not token:
+        return {"ok": False, "violations": ['缺少 token：请先调用 return_exchange(action="validate") 获取确认令牌']}
+    err = _verify_action_token(token, "return", str(order["order_id"]))
+    if err:
+        return {"ok": False, "violations": [err]}
+    payload = _action_tokens[token]["payload"]
+    receipt = {
+        "return_id": commit(payload),
+        "order_id": order["order_id"],
+        "return_type": payload["return_type"],
+        "status": "待寄回",
+    }
+    _consume_action_token(token, receipt)
+    return {"ok": True, "message": "退换货单据已生成", "receipt": receipt}
+
+
 def _public_order(order: dict) -> dict:
     """对外返回形态：items_json 解析成 items 列表（给模型看更友好）。"""
     d = {k: v for k, v in order.items() if k != "items_json"}
@@ -277,6 +545,8 @@ _MOCK_ORDERS: dict[str, dict] = {
     "MOCK1001": {
         "order_id": "MOCK1001", "buyer": "张*", "amount": 199.0, "status": "paid",
         "created_at": date.today().isoformat(),
+        "address": "广东省广州市天河区体育西路103号维多利广场A座1802室",
+        "carrier": "", "tracking_no": "",
         "items_json": json.dumps(
             [{"sku": "SKU1004", "name": "无线蓝牙耳机", "price": 199.0, "qty": 1}],
             ensure_ascii=False,
@@ -285,6 +555,8 @@ _MOCK_ORDERS: dict[str, dict] = {
     "MOCK1002": {
         "order_id": "MOCK1002", "buyer": "王**", "amount": 79.9, "status": "refunded",
         "created_at": date.today().isoformat(),
+        "address": "上海市静安区南京西路1266号恒隆广场二期2801室",
+        "carrier": "", "tracking_no": "",
         "items_json": json.dumps(
             [{"sku": "SKU1001", "name": "纯棉基础款T恤", "price": 79.9, "qty": 1}],
             ensure_ascii=False,
@@ -293,8 +565,30 @@ _MOCK_ORDERS: dict[str, dict] = {
     "MOCK1003": {
         "order_id": "MOCK1003", "buyer": "李*", "amount": 49.9, "status": "paid",
         "created_at": "2020-01-01",  # 故意远超售后期，演示窗口校验
+        "address": "四川省成都市锦江区红星路三段1号IFS国际金融中心1座2203室",
+        "carrier": "", "tracking_no": "",
         "items_json": json.dumps(
             [{"sku": "SKU1003", "name": "桌面收纳盒", "price": 49.9, "qty": 1}],
+            ensure_ascii=False,
+        ),
+    },
+    "MOCK1004": {
+        "order_id": "MOCK1004", "buyer": "周*", "amount": 129.0, "status": "shipped",
+        "created_at": (date.today() - timedelta(days=2)).isoformat(),
+        "address": "浙江省宁波市鄞州区四明中路999号万达广场西区7栋1602室",
+        "carrier": "顺丰速运", "tracking_no": "SF7392846152739",
+        "items_json": json.dumps(
+            [{"sku": "SKU1008", "name": "加厚珊瑚绒毯", "price": 129.0, "qty": 1}],
+            ensure_ascii=False,
+        ),
+    },
+    "MOCK1005": {
+        "order_id": "MOCK1005", "buyer": "吴**", "amount": 89.0, "status": "received",
+        "created_at": (date.today() - timedelta(days=2)).isoformat(),
+        "address": "江苏省苏州市工业园区星海街200号中银惠龙大厦1208室",
+        "carrier": "", "tracking_no": "",
+        "items_json": json.dumps(
+            [{"sku": "SKU1009", "name": "不锈钢保温饭盒", "price": 89.0, "qty": 1}],
             ensure_ascii=False,
         ),
     },
@@ -374,6 +668,55 @@ class MockProvider:
             return new_id
 
         return _run_execute(order, token, done_row, commit)
+
+    # ── 咨询即办理可选方法（内存样例，与 SqliteStoreProvider 同契约）──
+    def validate_address(self, order_id: str, new_address: str) -> dict:
+        return _run_address_validate(_MOCK_ORDERS.get(str(order_id)), new_address)
+
+    def execute_address(self, order_id: str, token: str) -> dict:
+        oid = str(order_id)
+        order = _MOCK_ORDERS.get(oid)
+
+        def commit(new_address: str) -> None:
+            _MOCK_ORDERS[oid]["address"] = new_address
+
+        return _run_address_execute(order, token, commit)
+
+    def validate_intercept(self, order_id: str) -> dict:
+        return _run_intercept_validate(_MOCK_ORDERS.get(str(order_id)))
+
+    def execute_intercept(self, order_id: str, token: str) -> dict:
+        oid = str(order_id)
+        order = _MOCK_ORDERS.get(oid)
+
+        def commit() -> None:
+            _MOCK_ORDERS[oid]["status"] = "intercepted"
+
+        return _run_intercept_execute(order, token, commit)
+
+    def validate_return(self, order_id: str, return_type: str, reason: str) -> dict:
+        oid = str(order_id)
+        has_active = any(
+            a["order_id"] == oid and a["status"] in ("退款中", "待寄回") for a in _MOCK_AFTERSALES
+        )
+        return _run_return_validate(_MOCK_ORDERS.get(oid), return_type, reason, has_active)
+
+    def execute_return(self, order_id: str, token: str) -> dict:
+        oid = str(order_id)
+        order = _MOCK_ORDERS.get(oid)
+        has_active = any(
+            a["order_id"] == oid and a["status"] in ("退款中", "待寄回") for a in _MOCK_AFTERSALES
+        )
+
+        def commit(payload: dict) -> int:
+            new_id = max((int(a["id"]) for a in _MOCK_AFTERSALES), default=0) + 1
+            _MOCK_AFTERSALES.append({
+                "id": new_id, "order_id": oid, "type": payload["return_type"], "status": "待寄回",
+                "amount": payload["refund_amount"], "created_at": date.today().isoformat(),
+            })
+            return new_id
+
+        return _run_return_execute(order, token, has_active, commit)
 
 
 # ────────────────────────────── SQLite（默认） ──────────────────────────────
@@ -465,7 +808,8 @@ class SqliteStoreProvider:
         try:
             _require_table(conn, "orders")
             sql = (
-                "SELECT order_id, buyer, items_json, amount, status, created_at"
+                "SELECT order_id, buyer, items_json, amount, status, created_at,"
+                " address, carrier, tracking_no"
                 " FROM orders WHERE 1=1"
             )
             params: list[str] = []
@@ -559,6 +903,109 @@ class SqliteStoreProvider:
                 return aid
 
             return _run_execute(order, token, done_row, commit)
+        finally:
+            conn.close()
+
+    # ── 咨询即办理可选方法（真实 SQL；与 MockProvider 同契约）──
+    def validate_address(self, order_id: str, new_address: str) -> dict:
+        """改地址校验段：订单存在 / paid 未发货 / 新地址非空 → 发令牌 + 预览。"""
+        conn = self._connect()
+        try:
+            _require_table(conn, "orders")
+            row = conn.execute(
+                "SELECT * FROM orders WHERE order_id = ?", (str(order_id),)
+            ).fetchone()
+            return _run_address_validate(dict(row) if row else None, new_address)
+        finally:
+            conn.close()
+
+    def execute_address(self, order_id: str, token: str) -> dict:
+        """改地址执行段：幂等检查 → 令牌校验 → UPDATE orders.address → 回执。"""
+        oid = str(order_id)
+        conn = self._connect()
+        try:
+            _require_table(conn, "orders")
+            row = conn.execute("SELECT * FROM orders WHERE order_id = ?", (oid,)).fetchone()
+            order = dict(row) if row else None
+
+            def commit(new_address: str) -> None:
+                conn.execute("UPDATE orders SET address = ? WHERE order_id = ?", (new_address, oid))
+                conn.commit()
+
+            return _run_address_execute(order, token, commit)
+        finally:
+            conn.close()
+
+    def validate_intercept(self, order_id: str) -> dict:
+        """拦物流校验段：订单存在 / shipped 且未拦截过 → 发令牌 + 预览（含运单信息）。"""
+        conn = self._connect()
+        try:
+            _require_table(conn, "orders")
+            row = conn.execute(
+                "SELECT * FROM orders WHERE order_id = ?", (str(order_id),)
+            ).fetchone()
+            return _run_intercept_validate(dict(row) if row else None)
+        finally:
+            conn.close()
+
+    def execute_intercept(self, order_id: str, token: str) -> dict:
+        """拦物流执行段：每单限一次 → 令牌校验 → UPDATE orders.status='intercepted' → 回执。"""
+        oid = str(order_id)
+        conn = self._connect()
+        try:
+            _require_table(conn, "orders")
+            row = conn.execute("SELECT * FROM orders WHERE order_id = ?", (oid,)).fetchone()
+            order = dict(row) if row else None
+
+            def commit() -> None:
+                conn.execute("UPDATE orders SET status = 'intercepted' WHERE order_id = ?", (oid,))
+                conn.commit()
+
+            return _run_intercept_execute(order, token, commit)
+        finally:
+            conn.close()
+
+    def validate_return(self, order_id: str, return_type: str, reason: str) -> dict:
+        """退换货校验段：订单存在 / received / 退货期内 / 无进行中售后 → 发令牌 + 预览。"""
+        conn = self._connect()
+        try:
+            _require_table(conn, "orders")
+            _require_table(conn, "aftersales")
+            oid = str(order_id)
+            row = conn.execute("SELECT * FROM orders WHERE order_id = ?", (oid,)).fetchone()
+            has_active = conn.execute(
+                "SELECT 1 FROM aftersales WHERE order_id = ? AND status IN ('退款中', '待寄回') LIMIT 1",
+                (oid,),
+            ).fetchone() is not None
+            return _run_return_validate(dict(row) if row else None, return_type, reason, has_active)
+        finally:
+            conn.close()
+
+    def execute_return(self, order_id: str, token: str) -> dict:
+        """退换货执行段：重复发起检查 → 令牌校验 → INSERT aftersales「待寄回」→ 回执。"""
+        oid = str(order_id)
+        conn = self._connect()
+        try:
+            _require_table(conn, "orders")
+            _require_table(conn, "aftersales")
+            row = conn.execute("SELECT * FROM orders WHERE order_id = ?", (oid,)).fetchone()
+            order = dict(row) if row else None
+            has_active = conn.execute(
+                "SELECT 1 FROM aftersales WHERE order_id = ? AND status IN ('退款中', '待寄回') LIMIT 1",
+                (oid,),
+            ).fetchone() is not None
+
+            def commit(payload: dict) -> int:
+                cur = conn.execute(
+                    "INSERT INTO aftersales (order_id, type, status, amount, created_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (oid, payload["return_type"], "待寄回", payload["refund_amount"],
+                     date.today().isoformat()),
+                )
+                conn.commit()
+                return int(cur.lastrowid or 0)
+
+            return _run_return_execute(order, token, has_active, commit)
         finally:
             conn.close()
 
@@ -658,3 +1105,33 @@ def validate_refund_json(order_id: str, amount: object = None) -> str:
 def execute_refund_json(order_id: str, token: str) -> str:
     """给 refund_flow execute 段用：执行回执（或违规/幂等回执）→ JSON 字符串。"""
     return _dict_result("execute_refund", order_id, token)
+
+
+def validate_address_json(order_id: str, new_address: object) -> str:
+    """给 modify_address validate 段用：校验结果（含令牌/预览或违规）→ JSON 字符串。"""
+    return _dict_result("validate_address", order_id, new_address)
+
+
+def execute_address_json(order_id: str, token: str) -> str:
+    """给 modify_address execute 段用：执行回执（或违规/幂等回执）→ JSON 字符串。"""
+    return _dict_result("execute_address", order_id, token)
+
+
+def validate_intercept_json(order_id: str) -> str:
+    """给 intercept_logistics validate 段用：校验结果（含令牌/预览或违规）→ JSON 字符串。"""
+    return _dict_result("validate_intercept", order_id)
+
+
+def execute_intercept_json(order_id: str, token: str) -> str:
+    """给 intercept_logistics execute 段用：执行回执（或违规）→ JSON 字符串。"""
+    return _dict_result("execute_intercept", order_id, token)
+
+
+def validate_return_json(order_id: str, return_type: object, reason: object) -> str:
+    """给 return_exchange validate 段用：校验结果（含令牌/预览或违规）→ JSON 字符串。"""
+    return _dict_result("validate_return", order_id, return_type, reason)
+
+
+def execute_return_json(order_id: str, token: str) -> str:
+    """给 return_exchange execute 段用：执行回执（或违规）→ JSON 字符串。"""
+    return _dict_result("execute_return", order_id, token)

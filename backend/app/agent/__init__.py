@@ -1,8 +1,10 @@
-"""店智 Copilot — Agent 工具模块（7 个工具）。
+"""店智 Copilot — Agent 工具模块（10 个工具）。
 
 P4 四件套：kb_search / data_query / copywriting / policy_check
 P5 新增（docs/plan-p5.md §3.3）：product_lookup / order_lookup / refund_flow
   （refund_flow 两段式：validate 后端校验发令牌 → 用户确认 → execute 凭令牌执行）
+咨询即办理新增：modify_address / intercept_logistics / return_exchange
+  （同一两段式模式：改订单地址 / 拦截物流 / 生成退换货单据）
 
 每个工具 = 一个 Tool 实例，注册到 REGISTRY。loop.py 通过 list_schemas() 生成
 OpenAI function calling 的 tools 数组，用 name 分发调用。
@@ -51,11 +53,17 @@ register(Tool(
 
 from .data_provider import (
     aftersales_json,
+    execute_address_json,
+    execute_intercept_json,
     execute_refund_json,
+    execute_return_json,
     orders_json,
     products_json,
     snapshot_json,
+    validate_address_json,
+    validate_intercept_json,
     validate_refund_json,
+    validate_return_json,
 )
 
 
@@ -230,4 +238,145 @@ register(Tool(
         required=["action", "order_id"],
     ),
     fn=_refund_flow,
+))
+
+
+# ────────────────────────────── modify_address ──────────────────────────
+
+def _modify_address(
+    action: str,
+    order_id: str,
+    new_address: str | None = None,
+    token: str | None = None,
+) -> str:
+    """两段式改地址：validate 后端校验并发令牌 → 用户确认 → execute 凭令牌执行（幂等）。
+
+    所有业务校验都在后端（data_provider._run_address_validate），不信任模型传参；
+    模型只负责把 preview 复述给用户并征求确认。
+    """
+    if action not in ("validate", "execute"):
+        return json.dumps(
+            {"ok": False, "violations": [f"action 必须是 validate 或 execute，收到: {action!r}"]},
+            ensure_ascii=False,
+        )
+    if action == "validate":
+        return validate_address_json(order_id, new_address)
+    if not token:
+        return json.dumps(
+            {"ok": False, "violations": ['execute 需要 token 参数（先调 validate 获取确认令牌）']},
+            ensure_ascii=False,
+        )
+    return execute_address_json(order_id, token)
+
+
+register(Tool(
+    name="modify_address",
+    description=(
+        "两段式修改订单收货地址（必须先 validate 再 execute，仅已付款未发货订单可改）："
+        "action='validate' 后端校验订单并返回 {token, preview}，把 preview 复述给用户问「确认修改地址吗？」；"
+        "用户确认后 action='execute' 携带 token 执行修改并返回回执。"
+        "校验不过返回 {ok:false, violations}，请原样转述；重复 execute 返回幂等「已修改地址」回执。"
+    ),
+    parameters=param_schema(
+        action={"type": "string", "enum": ["validate", "execute"], "description": "validate=校验并发令牌；execute=凭令牌执行"},
+        order_id={"type": "string", "description": "订单号"},
+        new_address={"type": "string", "description": "新收货地址（validate 必填；execute 忽略，以令牌锁定地址为准）"},
+        token={"type": "string", "description": "validate 返回的确认令牌（execute 必填，10 分钟内有效、一次性）"},
+        required=["action", "order_id"],
+    ),
+    fn=_modify_address,
+))
+
+
+# ────────────────────────────── intercept_logistics ─────────────────────
+
+def _intercept_logistics(
+    action: str,
+    order_id: str,
+    token: str | None = None,
+) -> str:
+    """两段式拦截物流：validate 后端校验并发令牌 → 用户确认 → execute 凭令牌执行（每单限一次）。
+
+    所有业务校验都在后端（data_provider._run_intercept_validate），不信任模型传参；
+    模型只负责把 preview 复述给用户并征求确认。
+    """
+    if action not in ("validate", "execute"):
+        return json.dumps(
+            {"ok": False, "violations": [f"action 必须是 validate 或 execute，收到: {action!r}"]},
+            ensure_ascii=False,
+        )
+    if action == "validate":
+        return validate_intercept_json(order_id)
+    if not token:
+        return json.dumps(
+            {"ok": False, "violations": ['execute 需要 token 参数（先调 validate 获取确认令牌）']},
+            ensure_ascii=False,
+        )
+    return execute_intercept_json(order_id, token)
+
+
+register(Tool(
+    name="intercept_logistics",
+    description=(
+        "两段式拦截物流（必须先 validate 再 execute，仅已发货在途订单可拦、每单限拦一次）："
+        "action='validate' 后端校验订单并返回 {token, preview}（含运单信息），把 preview 复述给用户问「确认拦截物流吗？」；"
+        "用户确认后 action='execute' 携带 token 执行拦截并返回回执。"
+        "校验不过返回 {ok:false, violations}，请原样转述。"
+    ),
+    parameters=param_schema(
+        action={"type": "string", "enum": ["validate", "execute"], "description": "validate=校验并发令牌；execute=凭令牌执行"},
+        order_id={"type": "string", "description": "订单号"},
+        token={"type": "string", "description": "validate 返回的确认令牌（execute 必填，10 分钟内有效、一次性）"},
+        required=["action", "order_id"],
+    ),
+    fn=_intercept_logistics,
+))
+
+
+# ────────────────────────────── return_exchange ─────────────────────────
+
+def _return_exchange(
+    action: str,
+    order_id: str,
+    return_type: str | None = None,
+    reason: str | None = None,
+    token: str | None = None,
+) -> str:
+    """两段式退换货：validate 后端校验并发令牌 → 用户确认 → execute 凭令牌建单（待寄回）。
+
+    所有业务校验都在后端（data_provider._run_return_validate），不信任模型传参；
+    模型只负责把 preview 复述给用户并征求确认。
+    """
+    if action not in ("validate", "execute"):
+        return json.dumps(
+            {"ok": False, "violations": [f"action 必须是 validate 或 execute，收到: {action!r}"]},
+            ensure_ascii=False,
+        )
+    if action == "validate":
+        return validate_return_json(order_id, return_type, reason)
+    if not token:
+        return json.dumps(
+            {"ok": False, "violations": ['execute 需要 token 参数（先调 validate 获取确认令牌）']},
+            ensure_ascii=False,
+        )
+    return execute_return_json(order_id, token)
+
+
+register(Tool(
+    name="return_exchange",
+    description=(
+        "两段式生成退换货单据（必须先 validate 再 execute，仅已确认收货且 7 天退货期内可办）："
+        "action='validate' 后端校验订单并返回 {token, preview}（含退款金额），把 preview 复述给用户问「确认办理退换货吗？」；"
+        "用户确认后 action='execute' 携带 token 生成单据（状态「待寄回」）并返回回执。"
+        "校验不过返回 {ok:false, violations}，请原样转述。"
+    ),
+    parameters=param_schema(
+        action={"type": "string", "enum": ["validate", "execute"], "description": "validate=校验并发令牌；execute=凭令牌执行"},
+        order_id={"type": "string", "description": "订单号"},
+        return_type={"type": "string", "enum": ["退货退款", "换货"], "description": "退换货类型（validate 必填；execute 忽略，以令牌锁定为准）"},
+        reason={"type": "string", "description": "退换货原因（validate 必填；execute 忽略，以令牌锁定为准）"},
+        token={"type": "string", "description": "validate 返回的确认令牌（execute 必填，10 分钟内有效、一次性）"},
+        required=["action", "order_id"],
+    ),
+    fn=_return_exchange,
 ))

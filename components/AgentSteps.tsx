@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from 'react';
 
+import { ActionResultCard, type ActionKind } from './ActionResultCard';
 import { OrderResultCard } from './OrderResultCard';
 
 /** 一个 Agent 工具调用步骤（开始 + 结果） */
@@ -26,6 +27,9 @@ const TOOL_LABELS: Record<string, string> = {
   order_lookup: '订单查询',
   product_lookup: '商品查询',
   refund_flow: '退款流程',
+  modify_address: '地址修改',
+  intercept_logistics: '物流拦截',
+  return_exchange: '退换货',
 };
 
 const TOOL_ICONS: Record<string, string> = {
@@ -36,6 +40,9 @@ const TOOL_ICONS: Record<string, string> = {
   order_lookup: '📦',
   product_lookup: '🛍️',
   refund_flow: '💰',
+  modify_address: '📬',
+  intercept_logistics: '🚚',
+  return_exchange: '📦',
 };
 
 /** 推理理由兜底映射（步骤数据缺 reason 时按工具名生成） */
@@ -45,6 +52,9 @@ const TOOL_REASONS: Record<string, string> = {
   kb_search: '需要知识库内容辅助回答',
   data_query: '用户需要经营数据分析',
   refund_flow: '处理退款操作',
+  modify_address: '处理地址修改操作',
+  intercept_logistics: '处理物流拦截操作',
+  return_exchange: '处理退换货操作',
   copywriting: '生成商品文案',
   policy_check: '检查合规规则',
 };
@@ -67,6 +77,43 @@ function parseOrderData(summary: unknown): Record<string, unknown> | null {
   return raw !== null && typeof raw === 'object' && 'order_id' in raw
     ? (raw as Record<string, unknown>)
     : null;
+}
+
+/** 可出办理回执的行动类工具（与 TOOL_ACTION 一一对应） */
+const ACTION_TOOLS = ['refund_flow', 'modify_address', 'intercept_logistics', 'return_exchange'];
+
+/** 行动类工具名 → 办理回执卡片类型 */
+const TOOL_ACTION: Record<string, ActionKind> = {
+  refund_flow: 'refund',
+  modify_address: 'modify_address',
+  intercept_logistics: 'intercept',
+  return_exchange: 'return_exchange',
+};
+
+/**
+ * 解析行动类工具的办理结果：summary 为 JSON 且含 receipt 字段或 ok: true 时，
+ * 返回 ActionResultCard 所需的 action + data，否则返回 null。
+ * refund_flow 的 validate 段（needs_confirm 预览）不是办理结果，不出卡。
+ */
+function parseActionResult(
+  step: AgentStep,
+): { action: ActionKind; data: Record<string, unknown> } | null {
+  if (!step.done || !ACTION_TOOLS.includes(step.tool)) return null;
+  const action = TOOL_ACTION[step.tool];
+  let raw: unknown;
+  if (typeof step.summary === 'string') {
+    try {
+      raw = JSON.parse(step.summary);
+    } catch {
+      return null;
+    }
+  } else {
+    raw = step.summary;
+  }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const data = raw as Record<string, unknown>;
+  if (data.needs_confirm === true) return null;
+  return 'receipt' in data || data.ok === true ? { action, data } : null;
 }
 
 /**
@@ -116,6 +163,9 @@ function StepCard({ step }: { step: AgentStep }) {
     .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
     .join(' · ');
 
+  // 行动类工具的办理回执（咨询即办理）
+  const actionResult = parseActionResult(step);
+
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
       <div className="flex items-center justify-between gap-2">
@@ -144,9 +194,7 @@ function StepCard({ step }: { step: AgentStep }) {
       {/* 推理理由 */}
       <p className="mt-1 text-slate-600">💭 {reason}</p>
       {/* args 摘要（截断显示） */}
-      {argsBrief && (
-        <p className="mt-1 truncate text-slate-500">{argsBrief}</p>
-      )}
+      {argsBrief && <p className="mt-1 truncate text-slate-500">{argsBrief}</p>}
       {/* 展开后显示完整 result summary */}
       {expanded && step.summary && (
         <>
@@ -162,6 +210,10 @@ function StepCard({ step }: { step: AgentStep }) {
               const data = parseOrderData(step.summary);
               return data ? <OrderResultCard data={data} /> : null;
             })()}
+          {/* 行动类工具完成后渲染办理回执卡片 */}
+          {actionResult && (
+            <ActionResultCard action={actionResult.action} data={actionResult.data} />
+          )}
         </>
       )}
     </div>

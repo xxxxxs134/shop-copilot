@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
 """处理方案生成 API（运营助手）：POST /v1/escalate + GET /v1/escalation/stats。
 
-运营助手生成处理方案时调用，毫秒级返回情况摘要与建议动作
-（纯启发式分析消息内容，不调用 LLM）：
-    POST /v1/escalate         {session_id, reason, messages} → {summary, suggestions, scripts}
-    GET  /v1/escalation/stats                              → {total, pending, resolved, avg_resolution_minutes}
+运营助手生成处理方案时调用，LLM 理解完整对话后生成摘要/建议/话术：
+POST /v1/escalate         {session_id, reason, messages} → {summary, suggestions, scripts}
+GET  /v1/escalation/stats                              → {total, pending, resolved, avg_resolution_minutes}
 """
 
+import asyncio
+import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 
+import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -221,13 +224,122 @@ def _fallback_payload() -> dict:
     }
 
 
+# ────────────────────────────── LLM 处理方案生成 ──────────────────────────────
+
+_LLM_BUDGET_S = 15.0
+
+_SYSTEM_PROMPT = (
+    "你是一位电商运营助手。根据下方客服对话内容，生成一份「处理方案」。\n"
+    "要求：\n"
+    "1. summary：2-3 句话概括客户核心问题、诉求和情绪状态，提到具体订单号/商品/金额。\n"
+    "2. suggestions：2-3 条具体可执行的建议动作，每条 ≤30 字。\n"
+    "3. scripts：1-2 条可直接发给客户的话术，要有温度，≤50 字。\n"
+    "返回严格 JSON：{\"summary\": \"...\", \"suggestions\": [{\"icon\": \"emoji\", \"text\": \"...\"}], "
+    "\"scripts\": [{\"scenario\": \"场景名\", \"text\": \"...\"}]}"
+)
+
+
+def _messages_to_text(messages: list[EscalateMessage]) -> str:
+    """把消息列表拍平为 LLM 可读的对话文本。"""
+    lines: list[str] = []
+    for m in messages:
+        role = "客户" if m.role == "user" else "客服助手"
+        text = _msg_text(m.content)
+        if text:
+            lines.append(f"{role}：{text}")
+    return "\n".join(lines) if lines else "（暂无对话内容）"
+
+
+def _parse_llm_plan(content: str) -> dict | None:
+    """从 LLM 输出中提取 JSON 方案；解析失败返回 None。"""
+    text = content.strip()
+    m = re.search(r"\{[\s\S]*\}", text)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    summary = obj.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        return None
+    suggestions = []
+    for s in obj.get("suggestions", []) or []:
+        if isinstance(s, dict) and isinstance(s.get("text"), str):
+            suggestions.append({
+                "icon": s.get("icon", "💡"),
+                "text": s["text"],
+            })
+    scripts = []
+    for s in obj.get("scripts", []) or []:
+        if isinstance(s, dict) and isinstance(s.get("text"), str):
+            scripts.append({
+                "scenario": s.get("scenario", "话术"),
+                "text": s["text"],
+            })
+    return {
+        "summary": summary,
+        "suggestions": suggestions[:3] or [{"icon": "💡", "text": "复盘会话上下文，明确客户核心诉求"}],
+        "scripts": scripts[:2] or [{"scenario": "承接诉求", "text": "您好，您的问题我已经了解，正在为您加急处理，稍后为您同步处理结果。"}],
+    }
+
+
+async def _llm_generate_plan(dialogue: str, reason: str) -> dict | None:
+    """调 DeepSeek 生成贴合对话上下文的处理方案；失败返回 None（上层回落关键词兜底）。"""
+    api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        logger.warning("缺少 DEEPSEEK_API_KEY，处理方案生成转关键词兜底")
+        return None
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+    user_msg = f"客服对话：\n{dialogue}"
+    if reason.strip():
+        user_msg += f"\n\n补充说明：{reason.strip()}"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(_LLM_BUDGET_S, connect=3.0)) as client:
+            resp = await client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 800,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        logger.warning("LLM 处理方案生成失败: %s", exc)
+        return None
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        logger.warning("LLM 响应结构异常")
+        return None
+    return _parse_llm_plan(str(content))
+
+
 # ────────────────────────────── 端点 ──────────────────────────────
 
-@router.post("/v1/escalate", summary="处理方案生成：返回情况摘要、建议动作与可复制话术")
+@router.post("/v1/escalate", summary="处理方案生成：LLM 理解对话后返回情况摘要、建议动作与可复制话术")
 async def escalate(body: EscalateRequest) -> dict:
     try:
-        analysis = _analyze(body.messages)
-        result = _build_payload(analysis, body.reason, len(body.messages))
+        dialogue = _messages_to_text(body.messages)
+        # LLM 优先：贴合对话上下文生成方案
+        llm_plan = await _llm_generate_plan(dialogue, body.reason)
+        if llm_plan is not None:
+            result = llm_plan
+        else:
+            # 关键词兜底：LLM 不可用时仍返回可用方案
+            analysis = _analyze(body.messages)
+            result = _build_payload(analysis, body.reason, len(body.messages))
         _stats["total"] += 1
         _stats["pending"] += 1
         return result

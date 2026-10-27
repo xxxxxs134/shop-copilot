@@ -122,7 +122,7 @@ function parseActionResult(
  * 渲染 Agent 运行过程中的工具调用轨迹，让用户看见「AI 在想什么、做了什么」。
  * 设计参考：OmniMerchant trace / merchant-agent 进度回调 → 简化为步骤卡片。
  */
-export function AgentSteps({ steps }: { steps: AgentStep[] }) {
+export function AgentSteps({ steps, onOrderAction }: { steps: AgentStep[]; onOrderAction?: (order: { order_id: string; product: string; buyer: string; amount: number; status: string; date: string }) => void }) {
   if (steps.length === 0) return null;
 
   const stepCount = steps.length;
@@ -136,7 +136,7 @@ export function AgentSteps({ steps }: { steps: AgentStep[] }) {
               ↓
             </div>
           )}
-          <StepCard step={step} />
+          <StepCard step={step} onOrderAction={onOrderAction} />
         </Fragment>
       ))}
       <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
@@ -146,7 +146,7 @@ export function AgentSteps({ steps }: { steps: AgentStep[] }) {
   );
 }
 
-function StepCard({ step }: { step: AgentStep }) {
+function StepCard({ step, onOrderAction }: { step: AgentStep; onOrderAction?: (order: { order_id: string; product: string; buyer: string; amount: number; status: string; date: string }) => void }) {
   const [expanded, setExpanded] = useState(false);
   const label = TOOL_LABELS[step.tool] ?? step.tool;
   const icon = TOOL_ICONS[step.tool] ?? '🔧';
@@ -208,7 +208,7 @@ function StepCard({ step }: { step: AgentStep }) {
                 : JSON.stringify(step.summary, null, 2)}
             </pre>
           )}
-          {orderData && <OrderResultCard data={orderData} />}
+          {orderData && <OrderResultCard data={orderData} onAction={onOrderAction} />}
           {actionResult && (
             <ActionResultCard action={actionResult.action} data={actionResult.data} />
           )}

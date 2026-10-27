@@ -22,10 +22,11 @@ function productName(data: Record<string, unknown>): string {
  *
  * 一行摘要（订单号 · 商品 · 状态徽章）+ 一行明细（买家 · 金额 · 日期）。
  */
-export function OrderResultCard({ data }: { data: Record<string, unknown> }) {
-  // data fields: order_id, product/items, buyer, amount, status, created_at (optional)
+export function OrderResultCard({ data, onAction }: { data: Record<string, unknown>; onAction?: (order: { order_id: string; product: string; buyer: string; amount: number; status: string; date: string }) => void }) {
   const product = productName(data);
-  const created = typeof data.created_at === 'string' ? data.created_at : null;
+  const created = typeof data.created_at === 'string' ? data.created_at : '';
+  const status = String(data.status ?? '');
+  const refundable = ['paid', 'shipped', 'received', 'refunding', 'rejected'].includes(status);
 
   return (
     <div className="mt-1 rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
@@ -42,10 +43,28 @@ export function OrderResultCard({ data }: { data: Record<string, unknown> }) {
           <StatusBadge status={String(data.status ?? '')} />
         </span>
       </div>
-      <div className="mt-1 text-slate-400">
-        买家 {String(data.buyer ?? '—')} · ¥{String(data.amount ?? '—')}
-        {created ? ` · ${created}` : ''}
-      </div>
-    </div>
+  <div className="mt-1 text-slate-400">
+    买家 {String(data.buyer ?? '—')} · ¥{String(data.amount ?? '—')}
+    {created ? ` · ${created}` : ''}
+  </div>
+  {onAction && refundable && (
+    <button
+      type="button"
+      onClick={() =>
+        onAction({
+          order_id: String(data.order_id ?? ''),
+          product,
+          buyer: String(data.buyer ?? ''),
+          amount: Number(data.amount ?? 0),
+          status,
+          date: created,
+        })
+      }
+      className="mt-2 w-full rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700"
+    >
+      💰 处理退款
+    </button>
+  )}
+</div>
   );
 }

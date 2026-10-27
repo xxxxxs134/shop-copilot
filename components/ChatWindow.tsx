@@ -8,6 +8,7 @@ import { AgentSteps } from './AgentSteps';
 import { Sidebar } from './Sidebar';
 import { CitationCard } from './CitationCard';
 import { OrderDetailCard } from './OrderDetailCard';
+import { RefundDialog } from './RefundDialog';
 import { EscalationCard } from './EscalationCard';
 import { EscalateDialog } from './EscalateDialog';
 import { runAgentStream } from '@/lib/agentRun';
@@ -34,7 +35,7 @@ interface SpeechRecognitionLike {
 
 /** UIMessage → 纯文本（只取 text part） */
 function uiText(m: UIMessage): string {
-  return m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
+  return (m.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
 }
 
 /**
@@ -76,6 +77,7 @@ export function ChatWindow() {
 
   // ── 订单号检测（useMemo 派生，不触发 setState-in-effect）──
   const [dismissedOrder, setDismissedOrder] = useState<string | null>(null);
+  const [refundOrder, setRefundOrder] = useState<{ order_id: string; product: string; buyer: string; amount: number; status: string; date: string } | null>(null);
   const rawDetectedOrder = useMemo(() => {
     const allText = [
       ...messages.map((m) => uiText(m)),
@@ -488,6 +490,9 @@ export function ChatWindow() {
         {detectedOrder && (
           <OrderDetailCard orderId={detectedOrder} onClose={() => setDismissedOrder(detectedOrder)} />
         )}
+        {refundOrder && (
+          <RefundDialog order={refundOrder} onClose={() => setRefundOrder(null)} />
+        )}
         <div className="mx-auto flex h-full w-full max-w-3xl flex-1 flex-col px-4">
           {/* 顶栏 */}
           <header className="flex items-center justify-between border-b border-slate-200 py-4">
@@ -545,8 +550,8 @@ export function ChatWindow() {
           {ragEmpty && (
             <div className="mt-16 flex flex-wrap justify-center gap-2">
               {[
-                { icon: '📦', title: '查订单', desc: '状态与物流进度', q: '帮我查一下 SO20261025010 的订单状态和物流进度' },
-                { icon: '💰', title: '退款处理', desc: '两段式确认执行', q: 'SO20261025004 这单客户要退 80 块，帮我处理一下' },
+                { icon: '📦', title: '查订单', desc: '状态与物流进度', q: '帮我查一下 SO20261027010 的订单状态和物流进度' },
+                { icon: '💰', title: '退款处理', desc: '两段式确认执行', q: 'SO20261027016 这单客户要退 80 块，帮我处理一下' },
                 { icon: '📊', title: '经营分析', desc: '数据+建议', q: '帮我看看最近的经营数据，有什么需要改进的' },
                 { icon: '📚', title: '规则问答', desc: 'RAG 检索+溯源', q: 'DSR 评分是怎么算的？包含哪三项？' },
               ].map((s) => (
@@ -599,7 +604,7 @@ export function ChatWindow() {
                 )}
                 {agentMessages.map((m, i) => (
                   <div key={i} className="space-y-2">
-                    {m.steps && m.steps.length > 0 && <AgentSteps steps={m.steps} />}
+                    {m.steps && m.steps.length > 0 && <AgentSteps steps={m.steps} onOrderAction={setRefundOrder} />}
                     <MessageBubble
                       role={m.role}
                       text={m.content}

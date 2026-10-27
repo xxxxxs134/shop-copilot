@@ -13,13 +13,13 @@ const SCENARIOS: readonly Scenario[] = [
     icon: '📦',
     title: '查订单',
     description: '查订单状态与物流进度，给出下一步建议',
-    question: '帮我查一下 SO20261025010 的订单状态和物流进度',
+    question: '帮我查一下 SO20261027010 的订单状态和物流进度',
   },
   {
     icon: '💰',
     title: '退款处理',
     description: '校验规则后预览执行退款，出售后回执',
-    question: 'SO20261025004 这单客户要退 80 块，帮我处理一下',
+    question: 'SO20261027016 这单客户要退 80 块，帮我处理一下',
   },
   {
     icon: '📊',

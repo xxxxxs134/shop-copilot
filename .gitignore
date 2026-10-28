@@ -33,3 +33,7 @@ Thumbs.db
 # 编辑器
 .vscode/
 .idea/
+
+# 本地编排与浏览器产物（不参与提交）
+.omo/
+.playwright-mcp/

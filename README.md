@@ -214,4 +214,6 @@ npx @modelcontextprotocol/inspector python -m backend.mcp_server
 
 ## 团队信息
 
-- 开发者：（待填：姓名 / 学校 / 专业）
+- 开发者：邢博
+- 学校：河北传媒学院
+- 专业：人工智能

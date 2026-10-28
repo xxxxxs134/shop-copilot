@@ -180,7 +180,7 @@ docs/
   scenarios.md          # 12 段场景案例（意图 / 路由 / 推理链 / 技术点）
   video-script.md       # 演示视频脚本（~7 min 分镜）
   tech-doc.md           # 技术文档正文（导出 PDF）
-  tech-doc.pdf          # 技术文档 PDF（14 页）
+  tech-doc.pdf          # 技术文档 PDF（16 页）
   tech-plan.md          # 技术对比与架构计划书（9 个开源项目调研）
   plan-p4.md            # P4 真实落地计划书（差距对比/API 契约/验收）
   rag-eval.md           # RAG 评测报告 v1

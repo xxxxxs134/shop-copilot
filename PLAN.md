@@ -1,6 +1,6 @@
 # 店智 Copilot — 30 天开发计划（含验收检查）
 
-> 项目：电商运营 AI Agent 智能助手
+> 项目：店智 Copilot —— 中小电商运营者的 AI 工作台
 > 目标：2026-12-27 前提交竞赛材料（代码仓库 / 演示视频 5-8min / 技术文档 PDF ≤30页 / 可选在线演示）
 > 资源：单人，每天 2-4h，截止今天约 37 天（含 7 天缓冲）
 
@@ -60,8 +60,8 @@
 - [x] `git init` + 语义化提交
 - [x] 聊天页面：消息列表 + 输入框 + 流式打字机渲染 + 加载/错误状态（代码完成）
 - [x] `.env.example` + README 骨架
-- [ ] **M0b-Python**：FastAPI 后端（OpenAI 兼容 `/v1/chat/completions` 流式中转 DeepSeek）
-- [ ] 前端 provider baseURL 切换为 FastAPI（`AI_BASE_URL` 环境变量，默认 `http://127.0.0.1:8000/v1`）
+- [x] **M0b-Python**：FastAPI 后端（OpenAI 兼容 `/v1/chat/completions` 流式中转 DeepSeek）
+- [x] 前端 provider baseURL 切换为 FastAPI（`AI_BASE_URL` 环境变量，默认 `http://127.0.0.1:8000/v1`）
 
 **如何检查（逐条执行并记录结果）**
 ```bash
@@ -169,13 +169,13 @@ npx @modelcontextprotocol/inspector python -m backend.mcp_server
 ### M3 — 打磨 + 材料（D19-D28，W4）
 
 **做什么**
-- [ ] UI/UX：设计系统统一、暗色适配、响应式、加载骨架屏、错误边界、过渡动画
-- [ ] 性能：首屏 LCP < 2.5s、路由懒加载、图片优化
-- [ ] README 完整版：项目介绍 / 架构图 / 快速开始 / 环境变量模板 / 团队信息
-- [ ] 技术文档 PDF ≤30 页（按大赛 7 大章节）
-- [ ] 演示视频 5-8min 脚本 + 录制（1080p 普通话+字幕）
-- [ ] （可选）Vercel 部署 + 评审体验账号
-- [ ] 最终 Git 整理：提交历史体现真实过程
+- [x] UI/UX：设计系统统一、暗色适配、响应式、加载骨架屏、错误边界、过渡动画（已完成：设计令牌 + UI 原语、1440/390 两视口响应式、Skeleton 骨架屏、EmptyState 空态兜底；未做：暗色模式）
+- [ ] 性能：首屏 LCP < 2.5s、路由懒加载、图片优化（未测：无 Lighthouse 记录）
+- [ ] README 完整版：项目介绍 / 架构图 / 快速开始 / 环境变量模板 / 团队信息（结构已齐，团队信息仍为「待填」，见第 6 节）
+- [x] 技术文档 PDF ≤30 页（按大赛 7 大章节）（PDF v1.1 已重导（2026-10-28，10 页，正文含 43 篇口径））
+- [ ] 演示视频 5-8min 脚本 + 录制（1080p 普通话+字幕）（脚本已完成：`docs/video-script.md` ≈7 min；录制未做）
+- [ ] （可选）Vercel 部署 + 评审体验账号（未做）
+- [ ] 最终 Git 整理：提交历史体现真实过程（未做：本轮改动全部未提交）
 
 **如何检查**
 ```bash
@@ -209,7 +209,7 @@ ls docs/技术文档.pdf docs/演示视频.mp4 README.md .env.example  # 全部�
 - [ ] GitHub/Gitee Public 仓库，README 含项目介绍/架构/运行指南/团队信息
 - [ ] `.env.example` + 依赖清单 + 完整 git 历史
 - [ ] 演示视频 MP4 5-8min 1080p 普通话
-- [ ] 技术文档 PDF ≤30 页（概述/需求/架构/AI方案/实现/测试部署/展望 + 创新点）
+- [x] 技术文档 PDF ≤30 页（概述/需求/架构/AI方案/实现/测试部署/展望 + 创新点）（v1.1 · 2026-10-28 重导，10 页）
 - [ ] （加分）公网演示地址 + 评审账号
 
 ---
@@ -221,3 +221,12 @@ ls docs/技术文档.pdf docs/演示视频.mp4 README.md .env.example  # 全部�
 npx tsc --noEmit && npm run lint && npm run build && git status
 ```
 四者全绿 + 今日计划项完成 → `git commit` 写清楚做了什么 → 更新本文档勾选状态。
+
+---
+
+## 6. 交付状态（2026-10-28 收尾）
+
+- **唯一人工项**：`README.md`「团队信息」需填真实姓名 / 学校 / 专业（当前保留「待填」）。除此之外没有需要人工补充的内容。
+- **已核验事实**：43 篇语料 / 12 段场景 / 20 单种子订单 / 四个入口（`/workspace`、`/chat`、`/data`、`/kb`，另有 `/` 重定向）；`tsc=0`、`build=0`、`node scripts/smoke.mjs` 11/11。
+- **交付物备注**：`docs/tech-doc.pdf` 已重导为 v1.1（2026-10-28，10 页），正文含「43 篇」口径；旧版备份在 `.omo/qa/tech-doc-v1-20261024.pdf`。
+- **版本控制**：本轮全部改动仍在工作区，按用户要求未提交（`git status` 见交付报告）。

@@ -1,7 +1,7 @@
 # 店智 Copilot 技术文档
 
-> 面向中小电商运营者的 AI Agent 智能助手  
-> 版本：v1.0 · 2026-10-24
+> 面向中小电商运营者的 AI 工作台  
+> 版本：v1.1 · 2026-10-28
 
 ---
 
@@ -19,7 +19,7 @@
 
 ### 1.2 方案定位
 
-店智 Copilot 是一个**会查数、会引用、会思考**的电商运营 AI Agent 助手：
+店智 Copilot 是**中小电商运营者的 AI 工作台**——看数据、查问题、处理售后、写文案，一个对话框全搞定。核心能力是**会查数、会引用、会思考**：
 
 | 能力 | 实现 | 用户价值 |
 |------|------|----------|
@@ -94,7 +94,7 @@ FastAPI  backend/app/          ← AI 能力唯一接入层
 
 ### 3.1 语料
 
-- 40 篇种子文档（`data/raw/*.md`），覆盖 10 个类目 × 4 篇：
+- 43 篇种子文档（`data/raw/*.md`），覆盖 10 个类目（其中标题与搜索、内容与直播、账号与体验分为 5 篇，其余 7 类各 4 篇）：
   平台规则、选品、标题与搜索、付费推广、内容与直播、客服与售后、数据指标、活动促销、物流仓储、账号与体验分
 - 每篇带 YAML frontmatter（title / source / url / category），便于溯源
 
@@ -154,7 +154,7 @@ FastAPI  backend/app/          ← AI 能力唯一接入层
 ### 4.1 ReAct 循环
 
 ```
-输入 → DeepSeek function calling（带 4 个工具 schema）
+输入 → DeepSeek function calling（带 10 个工具 schema）
   ├─ 返回 tool_calls → 逐个执行 → SSE: step / step_result → 回填 → 循环（最多 5 步）
   └─ 返回 content → SSE: delta（流式） → done
 ```
@@ -292,7 +292,7 @@ backend/
     agent/
       loop.py           # 手写 ReAct 循环
       tools/__init__.py # Tool dataclass + 注册表
-      __init__.py       # 4 个工具实现
+      __init__.py       # 10 个工具实现
     rag/
       pipeline.py       # 语料清洗/分块/嵌入/索引
       retrieve.py       # 混合检索
@@ -303,7 +303,7 @@ backend/
   requirements.txt
   .env.example
 data/
-  raw/                  # 40 篇种子语料
+  raw/                  # 43 篇种子语料
   index/                # LanceDB 索引（构建产物）
 app/                    # Next.js
   api/{chat,agent,vision}/route.ts
@@ -419,7 +419,7 @@ npm run dev
 
 | 项 | 现状 | 方向 |
 |----|------|------|
-| 语料 | 40 篇方法论为主 | 扩充真实平台规则原文（数值型细节），提升 RAG 拉开差距的能力 |
+| 语料 | 43 篇方法论为主 | 扩充真实平台规则原文（数值型细节），提升 RAG 拉开差距的能力 |
 | data_query | 样例数据 | 接入真实店铺数据源（ERP/API） |
 | 图表 | 无 | data_query 结果 → ECharts 可视化 |
 | TTS | 无 | 回答播报 |

@@ -19,7 +19,7 @@
 
 ## 3. RAG 知识库（2 页）
 
-- 语料：40 篇种子文档，10 类，YAML frontmatter
+- 语料：43 篇种子文档，10 类，YAML frontmatter
 - 管线：清洗 → 分块（800 字符/200 overlap）→ fastembed BGE-small-zh（512 维）→ LanceDB
 - 检索：jieba BM25 + 向量余弦，RRF 融合（k=4）
 - 评测数据表：
@@ -30,8 +30,8 @@
 ## 4. Agent 内核（2 页）
 
 - ReAct 循环流程图（用户输入 → DeepSeek function calling → 工具执行 → 回填 → 最终回答）
-- 4 个工具规格表（name / description / 参数 / 返回）：
-  kb_search、data_query、copywriting、policy_check
+- 10 个工具规格表（name / description / 参数 / 返回）：
+  kb_search、data_query、copywriting、policy_check、product_lookup、order_lookup、refund_flow、modify_address、intercept_logistics、return_exchange
 - SSE 事件协议（step / step_result / delta / done / error）
 - 实测案例：「查店铺今日数据并给建议」→ 2 次 data_query → 138 段流式输出
 - 安全边界：MAX_STEPS=5、工具异常兜底、密钥仅存 Python 层

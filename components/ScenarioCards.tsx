@@ -10,28 +10,28 @@ interface Scenario {
 
 const SCENARIOS: readonly Scenario[] = [
   {
-    icon: '📦',
-    title: '查订单',
-    description: '查订单状态与物流进度，给出下一步建议',
-    question: '帮我查一下 SO20261027010 的订单状态和物流进度',
-  },
-  {
-    icon: '💰',
-    title: '退款处理',
-    description: '校验规则后预览执行退款，出售后回执',
-    question: '帮我把 SO20261027016 这单全额退款 199 元，走退款流程',
-  },
-  {
     icon: '📊',
-    title: '经营分析',
-    description: '查经营数据出报表，给可执行改进建议',
-    question: '帮我看看最近的经营数据，有什么需要改进的',
+    title: '看数据',
+    description: '今日经营分析+异常点定位',
+    question: '今天经营情况怎么样？有什么需要关注的',
   },
   {
-    icon: '📚',
-    title: '规则问答',
-    description: '检索知识库，有据可查地解答平台规则',
-    question: 'DSR 评分是怎么算的？包含哪三项？',
+    icon: '🔍',
+    title: '查问题',
+    description: '退款率异常归因+处理建议',
+    question: '最近退款率好像涨了，帮我分析一下原因和该怎么处理',
+  },
+  {
+    icon: '📋',
+    title: '处理投诉',
+    description: '查上下文+生成处理方案',
+    question: '有客户投诉 SO20261027017 延迟发货，帮我分析一下该怎么回复处理',
+  },
+  {
+    icon: '✍️',
+    title: '写文案',
+    description: '商品标题+卖点+描述',
+    question: '给纯棉基础款T恤写一个商品标题和卖点',
   },
 ];
 

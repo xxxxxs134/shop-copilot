@@ -70,7 +70,7 @@ function parseEscalation(data: unknown): EscalationData | null {
 /** 后端未就绪时的兜底卡片内容（结合当前会话上下文生成，保证 UI 可用） */
 function buildMockEscalation(req: EscalateRequest): EscalationData {
   const allText = req.messages.map((m) => m.content).join(' ');
-  const orderId = allText.match(/SO\d{12}/)?.[0] ?? null;
+  const orderId = allText.match(/SO\d{11}/)?.[0] ?? null;
   const lastUser =
     [...req.messages].reverse().find((m) => m.role === 'user')?.content.trim() ?? '';
   const topic = lastUser.slice(0, 40) || '当前对话';

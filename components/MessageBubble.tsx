@@ -40,7 +40,7 @@ export function MessageBubble({
       <div className="flex justify-end">
         <div className="flex max-w-[80%] flex-col items-end gap-1">
           {intent && <IntentChip intent={intent} mode={mode} />}
-          <div className="max-w-full whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2.5 text-sm text-white">
+          <div className="max-w-full whitespace-pre-wrap rounded-card rounded-br-sm bg-brand-600 px-4 py-2.5 text-sm text-white">
             {text}
           </div>
         </div>
@@ -51,7 +51,7 @@ export function MessageBubble({
   return (
     <div className="group flex flex-col items-start gap-2">
       <EmpathyBanner sentiment={intent?.sentiment} />
-      <div className="max-w-[80%] rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+      <div className="max-w-[80%] rounded-card rounded-bl-sm border border-line bg-surface px-4 py-2.5 shadow-card">
         <MarkdownText text={text} onCite={onCite} />
         <MessageActions text={text} isLast={isLast} disabled={busy} onRegenerate={onRegenerate} />
       </div>

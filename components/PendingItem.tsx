@@ -27,7 +27,7 @@ export function PendingItem({
         <p className="text-sm font-medium text-slate-700">
           {orderId} · ¥{amount}
         </p>
-        <p className="text-[11px] text-slate-400">{date}</p>
+        <p className="text-xs text-slate-400">{date}</p>
       </div>
       <button
         onClick={() => onAction(orderId)}

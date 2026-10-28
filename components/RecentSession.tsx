@@ -1,4 +1,6 @@
-"use client";
+'use client';
+
+import { Badge } from '@/components/ui/Badge';
 
 export function RecentSession({
   title,
@@ -12,27 +14,25 @@ export function RecentSession({
   onClick: () => void;
 }) {
   const timeStr = updatedAt
-    ? new Date(updatedAt * 1000).toLocaleString("zh-CN", {
-        month: "numeric",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
+    ? new Date(updatedAt * 1000).toLocaleString('zh-CN', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
       })
-    : "";
-  const modeColor = mode === "agent" ? "bg-purple-100 text-purple-600" : "bg-blue-100 text-blue-600";
+    : '';
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition hover:bg-slate-50"
+      className="flex w-full min-w-0 items-center justify-between gap-2 rounded-control px-3 py-2 text-left transition hover:bg-surface-muted"
     >
-      <div className="flex items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${modeColor}`}>
-          {mode.toUpperCase()}
-        </span>
-        <span className="truncate text-sm text-slate-700">{title}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Badge tone={mode === 'agent' ? 'brand' : 'info'}>{mode.toUpperCase()}</Badge>
+        <span className="min-w-0 truncate text-sm text-ink">{title}</span>
       </div>
-      <span className="shrink-0 text-[11px] text-slate-400">{timeStr}</span>
+      <span className="shrink-0 whitespace-nowrap text-xs text-ink-subtle">{timeStr}</span>
     </button>
   );
 }

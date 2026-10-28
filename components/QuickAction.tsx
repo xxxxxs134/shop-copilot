@@ -23,7 +23,7 @@ export function QuickAction({
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-slate-700">{label}</p>
-        {description && <p className="truncate text-[11px] text-slate-400">{description}</p>}
+        {description && <p className="truncate text-xs text-slate-400">{description}</p>}
       </div>
     </Link>
   );

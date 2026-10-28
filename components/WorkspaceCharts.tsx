@@ -29,54 +29,16 @@ export function KbStats({ docCount, chunkCount, retrievalScore }: { docCount: nu
     <div className="grid grid-cols-3 gap-3">
       <div className="rounded-lg bg-slate-50 px-3 py-2 text-center">
         <p className="text-lg font-bold text-slate-800">{docCount}</p>
-        <p className="text-[10px] text-slate-400">知识文档</p>
+        <p className="text-xs text-slate-400">知识文档</p>
       </div>
       <div className="rounded-lg bg-slate-50 px-3 py-2 text-center">
         <p className="text-lg font-bold text-slate-800">{chunkCount}</p>
-        <p className="text-[10px] text-slate-400">检索切片</p>
+        <p className="text-xs text-slate-400">检索切片</p>
       </div>
       <div className="rounded-lg bg-emerald-50 px-3 py-2 text-center">
         <p className="text-lg font-bold text-emerald-600">{retrievalScore}%</p>
-        <p className="text-[10px] text-slate-400">检索自测</p>
+        <p className="text-xs text-slate-400">检索自测</p>
       </div>
-    </div>
-  );
-}
-
-export function IntentDist({ counts }: { counts: Record<string, number> }) {
-  const colors: Record<string, string> = {
-    knowledge: "bg-blue-500",
-    data: "bg-purple-500",
-    policy: "bg-yellow-500",
-    copywriting: "bg-pink-500",
-    general: "bg-slate-400",
-  };
-  const labels: Record<string, string> = {
-    knowledge: "知识",
-    data: "数据",
-    policy: "规则",
-    copywriting: "文案",
-    general: "通用",
-  };
-  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-
-  return (
-    <div className="space-y-1.5">
-      {Object.entries(counts).map(([key, count]) => (
-        <div key={key} className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${colors[key] ?? "bg-slate-300"}`} />
-          <span className="w-10 text-xs text-slate-500">{labels[key] ?? key}</span>
-          <div className="flex-1">
-            <div className="h-1.5 rounded-full bg-slate-100">
-              <div
-                className={`h-1.5 rounded-full ${colors[key] ?? "bg-slate-300"}`}
-                style={{ width: `${(count / total) * 100}%` }}
-              />
-            </div>
-          </div>
-          <span className="w-8 text-right text-xs text-slate-500">{count}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -108,10 +70,10 @@ export function TrendChart({ data, height = 120 }: { data: Array<{ date: string;
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-end gap-3">
-        <span className="flex items-center gap-1 text-[10px] text-slate-400">
+        <span className="flex items-center gap-1 text-xs text-slate-400">
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500" /> GMV
         </span>
-        <span className="flex items-center gap-1 text-[10px] text-slate-400">
+        <span className="flex items-center gap-1 text-xs text-slate-400">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> 订单
         </span>
       </div>
@@ -155,7 +117,7 @@ export function TrendChart({ data, height = 120 }: { data: Array<{ date: string;
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+      <div className="mt-1 flex justify-between text-xs text-slate-400">
         {ticks.map((i, pos) => (
           <span key={i} className={pos === 0 ? "" : pos === ticks.length - 1 ? "text-right" : ""}>
             {data[i].date.slice(5)}
@@ -183,7 +145,7 @@ export function DonutChart({ data, size = 160 }: { data: Array<{ label: string; 
         <div className="relative rounded-full" style={{ width: size, height: size, background: ring }}>
           <div className="absolute inset-[22%] flex flex-col items-center justify-center rounded-full bg-white">
             <p className="text-lg font-bold text-slate-800">{total.toLocaleString()}</p>
-            <p className="text-[10px] text-slate-400">总计</p>
+            <p className="text-xs text-slate-400">总计</p>
           </div>
         </div>
       </div>

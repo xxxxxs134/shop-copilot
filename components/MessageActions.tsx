@@ -46,7 +46,7 @@ export function MessageActions({
       <button
         type="button"
         onClick={handleCopy}
-        className="rounded-md px-2 py-1 text-[11px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+        className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
         title="复制回答"
       >
         {copied ? '✓ 已复制' : '复制'}
@@ -56,7 +56,7 @@ export function MessageActions({
           type="button"
           onClick={onRegenerate}
           disabled={disabled}
-          className="rounded-md px-2 py-1 text-[11px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
           title="重新生成这条回答"
         >
           重新生成

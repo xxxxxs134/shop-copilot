@@ -88,7 +88,7 @@ export function MarkdownText({ text, onCite, className }: MarkdownTextProps) {
                   <button
                     type="button"
                     onClick={() => onCite?.(n)}
-                    className="mx-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-100 px-1 align-super text-[10px] font-semibold text-brand-700 transition hover:bg-brand-600 hover:text-white"
+                    className="mx-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-100 px-1 align-super text-xs font-semibold text-brand-700 transition hover:bg-brand-600 hover:text-white"
                     title={`查看来源 [${n}]`}
                   >
                     {n}

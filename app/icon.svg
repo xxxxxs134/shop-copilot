@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="店智 Copilot">
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <path d="M24 24v-2.5a8 8 0 0 1 16 0V24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+  <rect x="16" y="24" width="32" height="25" rx="6.5" fill="#ffffff"/>
+  <circle cx="26" cy="34.5" r="2" fill="#2563eb"/>
+  <circle cx="32" cy="34.5" r="2" fill="#2563eb"/>
+  <circle cx="38" cy="34.5" r="2" fill="#2563eb"/>
+</svg>

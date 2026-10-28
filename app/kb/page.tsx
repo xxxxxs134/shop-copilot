@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
+import { Card, CardBody } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { cn } from '@/lib/cn';
 
 /**
  * 知识库管理页（P5 §4.2）
@@ -49,6 +56,11 @@ interface ToastState {
   title: string;
   detail?: string;
 }
+
+// ── 常量 ──
+
+/** C9 检索自测得分（backend/.../selftest.py 最近一次结果，用于统计卡展示） */
+const RETRIEVAL_SCORE = 90;
 
 // ── 请求层（与 lib/sessionsClient.ts 同款：同源代理 + FastAPI 错误体解析） ──
 
@@ -289,6 +301,45 @@ function AlertIcon({ className }: { className?: string }) {
   );
 }
 
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+/** 统计卡：值 text-2xl / 标签 text-xs，与 /workspace 的 KPI 同族 */
+function StatCard({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: string | number;
+  suffix?: string;
+}) {
+  return (
+    <Card className="p-4">
+      <p className="text-xs text-ink-subtle">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-ink">
+        {value}
+        {suffix && <span className="ml-0.5 text-sm font-normal text-ink-subtle">{suffix}</span>}
+      </p>
+    </Card>
+  );
+}
+
 /** textarea 自动撑高（上限 320px，超出滚动） */
 function autoGrow(el: HTMLTextAreaElement | null): void {
   if (!el) return;
@@ -361,9 +412,7 @@ export default function KbPage() {
     setChunksError(null);
     setChunks(null);
     try {
-      const raw = await request<unknown>(
-        `/api/v1/kb/chunks?doc=${encodeURIComponent(docId)}`,
-      );
+      const raw = await request<unknown>(`/api/v1/kb/chunks?doc=${encodeURIComponent(docId)}`);
       if (seq !== chunksSeqRef.current) return; // 已切换到别的文档，丢弃过期响应
       setChunks(parseChunks(raw));
     } catch (err) {
@@ -426,9 +475,7 @@ export default function KbPage() {
         body: JSON.stringify({ text }),
       });
       // 保存成功：把草稿落为正文，清掉草稿并闪烁「已保存」
-      setChunks((prev) =>
-        prev ? prev.map((c) => (c.id === key ? { ...c, text } : c)) : prev,
-      );
+      setChunks((prev) => (prev ? prev.map((c) => (c.id === key ? { ...c, text } : c)) : prev));
       setDrafts((prev) => {
         if (!(key in prev)) return prev;
         const next = { ...prev };
@@ -491,145 +538,134 @@ export default function KbPage() {
 
   return (
     <main className="min-h-screen">
-      <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
-        {/* 顶栏：返回 + 标题 + 重建索引 */}
-        <header className="border-b border-slate-200 pb-4">
-          <Link
-            href="/"
-            className="mb-2 inline-flex items-center gap-1 text-xs text-slate-400 transition hover:text-brand-600"
-          >
-            <ArrowLeftIcon className="h-3.5 w-3.5" />
-            返回对话
-          </Link>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-lg font-bold text-brand-700">知识库</h1>
-              <p className="text-xs text-slate-500">
-                文档与切片管理 · 保存即重嵌入并失效检索，重建索引全量刷新
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleRebuild()}
-              disabled={rebuilding}
-              className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+      <PageContainer>
+        <div className="mx-auto w-full max-w-4xl space-y-5">
+          {/* 顶栏：返回 + 页头 + 重建索引 */}
+          <div>
+            <Link
+              href="/"
+              className="mb-2 inline-flex items-center gap-1 text-xs text-ink-subtle transition-colors hover:text-brand-600"
             >
-              <RefreshIcon className={`h-4 w-4 ${rebuilding ? 'animate-spin' : ''}`} />
-              {rebuilding ? '重建中…' : '重建索引'}
-            </button>
+              <ArrowLeftIcon className="h-3.5 w-3.5" />
+              返回工作台
+            </Link>
+            <PageHeader
+              title="知识库"
+              description="编辑切片，保存即生效"
+              actions={
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleRebuild()}
+                  disabled={rebuilding}
+                >
+                  <RefreshIcon className={cn('h-4 w-4', rebuilding && 'animate-spin')} />
+                  {rebuilding ? '重建中…' : '重建索引'}
+                </Button>
+              }
+            />
           </div>
-        </header>
 
-        {/* 文档表：错误 / 加载 / 空 / 正常 */}
-        <div className="mt-5">
+          {/* 统计：文档数 / 切片数 / 检索得分 */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatCard label="文档数" value={docs === null ? '—' : docs.length} />
+            <StatCard label="切片数" value={docs === null ? '—' : totalChunks} />
+            <StatCard label="检索得分" value={RETRIEVAL_SCORE} suffix="%" />
+          </div>
+
+          {/* 文档列表：错误 / 加载 / 空 / 正常 */}
           {docsError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              <p className="font-medium">文档列表加载失败</p>
-              <p className="mt-1 break-all">{docsError}</p>
-              <button
-                type="button"
-                onClick={() => void loadDocs()}
-                className="mt-2 text-red-600 underline underline-offset-2 hover:text-red-800"
-              >
-                重试
-              </button>
-            </div>
+            <Card>
+              <CardBody>
+                <p className="text-sm font-medium text-ink">文档列表加载失败</p>
+                <p className="mt-1 break-all text-xs text-ink-subtle">{docsError}</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => void loadDocs()}
+                >
+                  重试
+                </Button>
+              </CardBody>
+            </Card>
           )}
 
           {docsLoading && (
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-4 border-b border-slate-100 px-4 py-4 last:border-b-0"
-                >
-                  <div className="h-3 flex-1 animate-pulse rounded bg-slate-100" />
-                  <div className="h-3 w-20 animate-pulse rounded bg-slate-100" />
-                  <div className="h-3 w-10 animate-pulse rounded bg-slate-100" />
-                </div>
-              ))}
-            </div>
+            <Card>
+              <CardBody className="space-y-3">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-4 py-2">
+                    <Skeleton className="h-3 flex-1" />
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="h-3 w-10" />
+                  </div>
+                ))}
+              </CardBody>
+            </Card>
           )}
 
           {!docsLoading && !docsError && docs !== null && docs.length === 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-12 text-center">
-              <p className="text-sm text-slate-400">知识库暂无文档</p>
-              <p className="mt-1 text-xs text-slate-300">
-                先执行 python -m backend.app.rag.pipeline build 构建索引
-              </p>
-            </div>
+            <Card>
+              <CardBody>
+                <EmptyState
+                  title="知识库暂无文档"
+                  hint="先执行 python -m backend.app.rag.pipeline build 构建索引"
+                />
+              </CardBody>
+            </Card>
           )}
 
           {!docsLoading && !docsError && docs !== null && docs.length > 0 && (
-            <>
-              <p className="mb-2 flex items-center justify-between text-xs text-slate-400">
-                <span>
+            <Card className="overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3">
+                <p className="text-sm font-semibold text-ink">文档与切片</p>
+                <p className="text-xs text-ink-subtle">
                   共 {docs.length} 篇文档 · {totalChunks} 个切片
-                </span>
-                <span>点击文档行展开切片</span>
-              </p>
-
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/70 text-left text-xs text-slate-400">
-                      <th className="px-4 py-2.5 font-medium">标题</th>
-                      <th className="w-36 px-4 py-2.5 font-medium">分类</th>
-                      <th className="w-28 px-4 py-2.5 text-right font-medium">切片数</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {docs.map((doc) => {
-                      const open = openId === doc.id;
-                      return (
-                        <DocRow
-                          key={doc.id}
-                          doc={doc}
-                          open={open}
-                          onToggle={() => toggleDoc(doc.id)}
-                        >
-                          {open && (
-                            <ChunkPanel
-                              doc={doc}
-                              chunks={chunks}
-                              loading={chunksLoading}
-                              error={chunksError}
-                              drafts={drafts}
-                              savingId={savingId}
-                              saveErrors={saveErrors}
-                              savedId={savedId}
-                              onDraft={(chunkId, value) =>
-                                setDrafts((prev) => ({ ...prev, [chunkId]: value }))
-                              }
-                              onSave={saveChunk}
-                              onRevert={revertChunk}
-                              onRetry={() => void loadChunks(doc.id)}
-                            />
-                          )}
-                        </DocRow>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                </p>
               </div>
-            </>
+              <div>
+                {docs.map((doc) => {
+                  const open = openId === doc.id;
+                  return (
+                    <DocRow key={doc.id} doc={doc} open={open} onToggle={() => toggleDoc(doc.id)}>
+                      {open && (
+                        <CardBody className="border-t border-line bg-surface-muted">
+                          <ChunkPanel
+                            doc={doc}
+                            chunks={chunks}
+                            loading={chunksLoading}
+                            error={chunksError}
+                            drafts={drafts}
+                            savingId={savingId}
+                            saveErrors={saveErrors}
+                            savedId={savedId}
+                            onDraft={(chunkId, value) =>
+                              setDrafts((prev) => ({ ...prev, [chunkId]: value }))
+                            }
+                            onSave={saveChunk}
+                            onRevert={revertChunk}
+                            onRetry={() => void loadChunks(doc.id)}
+                          />
+                        </CardBody>
+                      )}
+                    </DocRow>
+                  );
+                })}
+              </div>
+            </Card>
           )}
         </div>
-      </div>
+      </PageContainer>
 
-      {/* 成功/失败 toast（右下角，与 CitationCard 同位同款） */}
+      {/* 成功/失败 toast（右上角，Card 承载） */}
       {toast && (
-        <div
-          role="status"
-          className={`fixed bottom-6 right-6 z-50 w-80 rounded-xl border bg-white p-4 shadow-xl ${
-            toast.kind === 'success' ? 'border-emerald-200' : 'border-red-200'
-          }`}
-        >
-          <div className="flex items-start gap-2.5">
+        <Card role="status" className="fixed right-6 top-6 z-50 w-80 shadow-xl">
+          <CardBody className="flex items-start gap-2.5 p-4">
             <span
-              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
-                toast.kind === 'success' ? 'bg-emerald-500' : 'bg-red-500'
-              }`}
+              className={cn(
+                'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white',
+                toast.kind === 'success' ? 'bg-success' : 'bg-danger',
+              )}
             >
               {toast.kind === 'success' ? (
                 <CheckIcon className="h-3 w-3" />
@@ -638,21 +674,21 @@ export default function KbPage() {
               )}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-700">{toast.title}</p>
+              <p className="text-sm font-medium text-ink">{toast.title}</p>
               {toast.detail && (
-                <p className="mt-0.5 break-all text-xs text-slate-500">{toast.detail}</p>
+                <p className="mt-0.5 break-all text-xs text-ink-subtle">{toast.detail}</p>
               )}
             </div>
             <button
               type="button"
               onClick={() => setToast(null)}
               aria-label="关闭提示"
-              className="shrink-0 rounded p-0.5 text-slate-300 transition hover:text-slate-500"
+              className="shrink-0 rounded-control p-0.5 text-ink-subtle transition-colors hover:text-ink"
             >
-              ✕
+              <XIcon className="h-3.5 w-3.5" />
             </button>
-          </div>
-        </div>
+          </CardBody>
+        </Card>
       )}
     </main>
   );
@@ -672,44 +708,45 @@ function DocRow({
   children?: React.ReactNode;
 }) {
   return (
-    <>
-      <tr
+    <div className="border-b border-line last:border-0">
+      <button
+        type="button"
         onClick={onToggle}
-        className={`cursor-pointer transition hover:bg-slate-50 ${open ? 'bg-brand-50/70' : ''}`}
+        aria-expanded={open}
+        className={cn(
+          'flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-surface-muted',
+          open && 'bg-surface-muted',
+        )}
       >
-        <td className="px-4 py-3">
-          <div className="flex items-start gap-2">
-            <ChevronRight
-              className={`mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform ${
-                open ? 'rotate-90 text-brand-600' : ''
-              }`}
-            />
-            <div className="min-w-0">
-              <p className={`truncate font-medium ${open ? 'text-brand-800' : 'text-slate-700'}`}>
-                {doc.title}
-              </p>
-              {doc.source && <p className="mt-0.5 truncate text-xs text-slate-400">{doc.source}</p>}
-            </div>
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-            {doc.category}
+        <ChevronRight
+          className={cn(
+            'h-4 w-4 shrink-0 text-ink-subtle transition-transform',
+            open && 'rotate-90 text-brand-600',
+          )}
+        />
+        <span className="min-w-0 flex-1">
+          <span
+            className={cn(
+              'block truncate text-sm font-medium',
+              open ? 'text-brand-700' : 'text-ink',
+            )}
+          >
+            {doc.title}
           </span>
-        </td>
-        <td className="px-4 py-3 text-right tabular-nums text-slate-500">
+          {doc.source && (
+            <span className="mt-0.5 block truncate text-xs text-ink-subtle">{doc.source}</span>
+          )}
+        </span>
+        <span className="inline-flex shrink-0 rounded-control bg-surface-subtle px-2 py-0.5 text-xs text-ink-muted">
+          {doc.category}
+        </span>
+        <span className="w-14 shrink-0 text-right text-sm tabular-nums text-ink-muted">
           {doc.chunk_count}
-          <span className="ml-0.5 text-xs text-slate-400">块</span>
-        </td>
-      </tr>
-      {open && (
-        <tr>
-          <td colSpan={3} className="border-t border-slate-100 bg-slate-50/60 p-0">
-            {children}
-          </td>
-        </tr>
-      )}
-    </>
+          <span className="ml-0.5 text-xs text-ink-subtle">块</span>
+        </span>
+      </button>
+      {children}
+    </div>
   );
 }
 
@@ -743,39 +780,35 @@ function ChunkPanel({
   onRetry: () => void;
 }) {
   return (
-    <div className="px-4 py-4">
-      <p className="mb-3 text-xs text-slate-400">
+    <div className="space-y-3">
+      <p className="text-xs text-ink-subtle">
         《{doc.title}》的切片 · 修改文本后点「保存」即重嵌入并即时生效
       </p>
 
       {loading && (
         <div className="space-y-3">
           {[0, 1].map((i) => (
-            <div key={i} className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="mb-2 h-3 w-24 animate-pulse rounded bg-slate-100" />
-              <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
-              <div className="mt-1.5 h-3 w-4/5 animate-pulse rounded bg-slate-100" />
+            <div key={i} className="rounded-control border border-line bg-surface p-3">
+              <Skeleton className="mb-2 h-3 w-24" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="mt-1.5 h-3 w-4/5" />
             </div>
           ))}
         </div>
       )}
 
       {!loading && error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <p className="font-medium">切片加载失败</p>
-          <p className="mt-1 break-all">{error}</p>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-2 text-red-600 underline underline-offset-2 hover:text-red-800"
-          >
+        <div className="rounded-control border border-line bg-surface px-4 py-3">
+          <p className="text-sm font-medium text-ink">切片加载失败</p>
+          <p className="mt-1 break-all text-xs text-ink-subtle">{error}</p>
+          <Button variant="secondary" size="sm" className="mt-3" onClick={onRetry}>
             重试
-          </button>
+          </Button>
         </div>
       )}
 
       {!loading && !error && chunks !== null && chunks.length === 0 && (
-        <p className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
+        <p className="rounded-control border border-dashed border-line bg-surface px-4 py-6 text-center text-xs text-ink-subtle">
           该文档暂无切片
         </p>
       )}
@@ -792,17 +825,16 @@ function ChunkPanel({
             return (
               <div
                 key={key}
-                className={`rounded-lg border bg-white p-3 transition ${
-                  saveError ? 'border-red-200' : dirty ? 'border-brand-200' : 'border-slate-200'
-                }`}
+                className={cn(
+                  'rounded-control border bg-surface p-3 transition-colors',
+                  saveError ? 'border-danger' : dirty ? 'border-brand-200' : 'border-line',
+                )}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-slate-400">
+                  <span className="text-xs font-medium text-ink-muted">
                     切片 #{chunk.chunk_index + 1}
                   </span>
-                  <span className="text-[10px] tabular-nums text-slate-300">
-                    {value.length} 字
-                  </span>
+                  <span className="text-xs tabular-nums text-ink-subtle">{value.length} 字</span>
                 </div>
 
                 <textarea
@@ -813,47 +845,43 @@ function ChunkPanel({
                   rows={2}
                   spellCheck={false}
                   aria-label={`切片 ${chunk.chunk_index + 1} 内容`}
-                  className="w-full resize-none overflow-y-auto rounded-md border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed text-slate-700 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                  className="w-full resize-none overflow-y-auto rounded-control border border-line bg-surface p-3 text-sm leading-relaxed text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                 />
 
-                {saveError && (
-                  <p className="mt-1.5 text-xs text-red-600">
-                    保存失败：{saveError}
-                  </p>
-                )}
+                {saveError && <p className="mt-1.5 text-xs text-danger">保存失败：{saveError}</p>}
 
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <span className="text-xs">
                     {justSaved ? (
-                      <span className="inline-flex items-center gap-1 font-medium text-emerald-600">
+                      <span className="inline-flex items-center gap-1 font-medium text-success">
                         <CheckIcon className="h-3 w-3" />
                         已保存
                       </span>
                     ) : dirty ? (
-                      <span className="text-amber-600">有未保存的修改</span>
+                      <span className="text-warning">有未保存的修改</span>
                     ) : (
-                      <span className="text-slate-300">与索引一致</span>
+                      <span className="text-ink-subtle">与索引一致</span>
                     )}
                   </span>
                   <span className="flex shrink-0 gap-2">
                     {dirty && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={() => onRevert(chunk)}
                         disabled={saving}
-                        className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 transition hover:bg-slate-50 disabled:opacity-40"
                       >
                         还原
-                      </button>
+                      </Button>
                     )}
-                    <button
-                      type="button"
+                    <Button
+                      variant="primary"
+                      size="sm"
                       onClick={() => onSave(chunk)}
                       disabled={!dirty || saving}
-                      className="rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {saving ? '保存中…' : '保存'}
-                    </button>
+                    </Button>
                   </span>
                 </div>
               </div>

@@ -6,6 +6,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { AgentSteps } from './AgentSteps';
 import { Sidebar } from './Sidebar';
+import { ScenarioCards } from './ScenarioCards';
+import { Button } from './ui/Button';
+import { Badge } from './ui/Badge';
 import { CitationCard } from './CitationCard';
 import { OrderDetailCard } from './OrderDetailCard';
 import { RefundDialog } from './RefundDialog';
@@ -13,7 +16,7 @@ import { EscalationCard } from './EscalationCard';
 import { EscalateDialog } from './EscalateDialog';
 import { runAgentStream } from '@/lib/agentRun';
 import { requestEscalation, type EscalationData } from '@/lib/escalateClient';
-import { useSessions } from '@/lib/useSessions';
+import { useSessions, DEFAULT_TITLE } from '@/lib/useSessions';
 import { ragSearch, type AgentMessage, type CitationSource } from '@/lib/sessionsClient';
 import {
   fetchIntent,
@@ -83,7 +86,7 @@ export function ChatWindow() {
       ...messages.map((m) => uiText(m)),
       ...agentMessages.map((m) => (typeof m.content === "string" ? m.content : "")),
     ].join(" ");
-    return allText.match(/SO\d{12}/)?.[0] ?? null;
+    return allText.match(/SO\d{11}/)?.[0] ?? null;
   }, [messages, agentMessages]);
   const detectedOrder = rawDetectedOrder !== dismissedOrder ? rawDetectedOrder : null;
 
@@ -106,6 +109,19 @@ export function ChatWindow() {
     },
   });
   const { mode, notifyChanged } = sessions;
+
+  /** 页头标题：当前会话标题；无会话或仍是默认标题时显示「新会话」 */
+  const activeSession = sessions.sessions.find((s) => s.id === sessions.activeId);
+  const headerTitle =
+    activeSession && activeSession.title !== DEFAULT_TITLE ? activeSession.title : '新会话';
+
+  // <lg 默认收起会话栏（展开时 Sidebar 以抽屉覆盖，点遮罩关闭）
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 1023px)').matches) {
+      sessions.setCollapsed(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 消息变化 → debounce 保存（hook 内部 1.5s + 签名守卫）
   useEffect(() => {
@@ -466,11 +482,10 @@ export function ChatWindow() {
     }
   }
 
-  const ragEmpty = messages.length === 0;
-  const agentEmpty = agentMessages.length === 0;
+  const conversationEmpty = mode === 'rag' ? messages.length === 0 : agentMessages.length === 0;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className="flex h-full w-full overflow-hidden">
       {/* 会话侧边栏 */}
       <Sidebar
         sessions={sessions.sessions}
@@ -493,48 +508,59 @@ export function ChatWindow() {
         {refundOrder && (
           <RefundDialog order={refundOrder} onClose={() => setRefundOrder(null)} />
         )}
-        <div className="mx-auto flex h-full w-full max-w-3xl flex-1 flex-col px-4">
-          {/* 顶栏 */}
-          <header className="flex items-center justify-between border-b border-slate-200 py-4">
-            <div>
-              <h1 className="text-lg font-bold text-brand-700">店智 Copilot</h1>
-              <p className="text-xs text-slate-500">电商运营 AI 智能助手 · 会话持久化 + 可溯源问答</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* 模式切换（空会话原地切，有内容自动新建） */}
-              <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => void sessions.toggleMode('rag')}
-                  disabled={busy}
-                  className={`rounded-md px-3 py-1 font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    mode === 'rag' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  RAG 问答
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void sessions.toggleMode('agent')}
-                  disabled={busy}
-                  className={`rounded-md px-3 py-1 font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    mode === 'agent' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Agent 模式
-                </button>
+        <div className="flex h-full w-full flex-1 flex-col">
+          {/* 顶栏：当前会话标题 + 模式切换 + 新建会话 */}
+          <header className="sticky top-0 z-10 shrink-0 border-b border-line bg-surface/95 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-semibold text-ink">{headerTitle}</h1>
+                <p className="mt-0.5 truncate text-xs text-ink-subtle">中小电商运营者的 AI 工作台</p>
               </div>
-              {/* 生成处理方案（运营助手） */}
-              <button
-                type="button"
-                onClick={() => setEscalateOpen(true)}
-                disabled={escalating}
-                title="运营助手：生成情况摘要、建议动作与可复制话术"
-                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {escalating ? '生成中…' : '📋 生成处理方案'}
-              </button>
-              <span className="rounded-full bg-brand-50 px-3 py-1 text-xs text-brand-700">DeepSeek</span>
+              <div className="flex shrink-0 items-center gap-2">
+                {/* 模式切换（空会话原地切，有内容自动新建） */}
+                <div className="inline-flex items-center gap-1 rounded-control border border-line bg-surface-muted p-1">
+                  <Button
+                    variant={mode === 'rag' ? 'primary' : 'ghost'}
+                    size="sm"
+                    onClick={() => void sessions.toggleMode('rag')}
+                    disabled={busy}
+                  >
+                    RAG 问答
+                  </Button>
+                  <Button
+                    variant={mode === 'agent' ? 'primary' : 'ghost'}
+                    size="sm"
+                    onClick={() => void sessions.toggleMode('agent')}
+                    disabled={busy}
+                  >
+                    Agent 模式
+                  </Button>
+                </div>
+                {/* 新建会话 */}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void sessions.newSession()}
+                  disabled={sessions.busy}
+                  title="新建会话"
+                >
+                  新建会话
+                </Button>
+                {/* 生成处理方案（运营助手） */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEscalateOpen(true)}
+                  disabled={escalating}
+                  title="运营助手：生成情况摘要、建议动作与可复制话术"
+                  className="hidden sm:inline-flex"
+                >
+                  {escalating ? '生成中…' : '生成处理方案'}
+                </Button>
+                <Badge tone="brand" className="hidden lg:inline-flex">
+                  DeepSeek
+                </Badge>
+              </div>
             </div>
           </header>
 
@@ -542,206 +568,198 @@ export function ChatWindow() {
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 space-y-4 overflow-y-auto py-6"
+            className="min-h-0 flex-1 overflow-y-auto"
           >
-            {/* RAG 模式 */}
-            {mode === 'rag' && (
-              <>
-          {ragEmpty && (
-            <div className="mt-16 flex flex-wrap justify-center gap-2">
-              {[
-                { icon: '📊', title: '看数据', desc: '今日经营分析+异常点定位', q: '今天经营情况怎么样？有什么需要关注的' },
-                { icon: '🔍', title: '查问题', desc: '退款率异常归因+处理建议', q: '最近退款率好像涨了，帮我分析一下原因和该怎么处理' },
-                { icon: '📋', title: '处理投诉', desc: '查上下文+生成处理方案', q: '有客户投诉 SO20261027017 延迟发货，帮我分析一下该怎么回复处理' },
-                { icon: '✍️', title: '写文案', desc: '商品标题+卖点+描述', q: '给纯棉基础款T恤写一个商品标题和卖点' },
-              ].map((s) => (
-                <button
-                  key={s.title}
-                  type="button"
-                  onClick={() => setInput(s.q)}
-                  title={s.desc}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs transition hover:border-brand-300"
-                >
-                  <span aria-hidden="true">{s.icon}</span>
-                  <span className="font-medium text-slate-700">{s.title}</span>
-                  <span className="text-slate-400">{s.desc}</span>
-                </button>
-              ))}
-            </div>
-          )}
-                {messages.map((m, i) => (
-                  <MessageBubble
-                    key={m.id}
-                    role={m.role === 'user' ? 'user' : 'assistant'}
-                    text={uiText(m)}
-                    isLast={i === messages.length - 1}
-                    busy={generating}
-                    onCite={(n) => void handleCite(n)}
-                    onRegenerate={() => void regenerate()}
-                    intent={(m as IntentUIMessage).intent}
-                    mode={mode}
-                  />
-                ))}
-                {status === 'submitted' && (
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-slate-400" />
-                    店智思考中…
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Agent 模式 */}
-            {mode === 'agent' && (
-              <>
-                {agentEmpty && (
-                  <div className="mt-20 text-center text-xs text-slate-400">
-                    <p>试着问我：查店铺今日数据并给建议</p>
-                    <p className="mt-1 text-slate-300">
-                      Agent 会自动调用工具：数据查询 / 知识库检索 / 文案生成 / 合规检查
+            <div className="mx-auto w-full max-w-3xl space-y-4 break-words px-4 py-6">
+              {/* 空状态：品牌一句话 + 场景卡片 + 操作提示 */}
+              {conversationEmpty && (
+                <div className="flex flex-col items-center justify-center gap-6 py-10 text-center">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold tracking-[0.18em] text-brand-600">
+                      店智 Copilot
+                    </p>
+                    <h2 className="text-xl font-semibold text-ink">中小电商运营者的 AI 工作台</h2>
+                    <p className="text-sm text-ink-muted">
+                      看数据、查问题、处理售后、写文案，一个对话框全搞定。
                     </p>
                   </div>
-                )}
-                {agentMessages.map((m, i) => (
-                  <div key={i} className="space-y-2">
-                    {m.steps && m.steps.length > 0 && <AgentSteps steps={m.steps} onOrderAction={setRefundOrder} />}
+                  <ScenarioCards onSelect={setInput} />
+                  <p className="text-xs text-ink-subtle">点击卡片预填，Enter 发送</p>
+                </div>
+              )}
+              {/* RAG 模式 */}
+              {mode === 'rag' && (
+                <>
+                  {messages.map((m, i) => (
                     <MessageBubble
-                      role={m.role}
-                      text={m.content}
-                      isLast={i === agentMessages.length - 1}
+                      key={m.id}
+                      role={m.role === 'user' ? 'user' : 'assistant'}
+                      text={uiText(m)}
+                      isLast={i === messages.length - 1}
                       busy={generating}
                       onCite={(n) => void handleCite(n)}
-                      onRegenerate={regenerateAgent}
-                      intent={m.intent}
+                      onRegenerate={() => void regenerate()}
+                      intent={(m as IntentUIMessage).intent}
                       mode={mode}
                     />
-                  </div>
-                ))}
-                {agentStreaming && !agentMessages[agentMessages.length - 1]?.content && (
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-slate-400" />
-                    Agent 思考中…
-                  </div>
-                )}
-              </>
-            )}
+                  ))}
+                  {status === 'submitted' && (
+                    <div className="flex items-center gap-2 text-sm text-ink-subtle">
+                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-subtle" />
+                      店智思考中…
+                    </div>
+                  )}
+                </>
+              )}
 
-            {/* 处理方案卡片（系统消息式，✕ 关闭） */}
-            {escalation && (
-              <EscalationCard data={escalation} onClose={() => setEscalation(null)} />
-            )}
+              {/* Agent 模式 */}
+              {mode === 'agent' && (
+                <>
+                  {agentMessages.map((m, i) => (
+                    <div key={i} className="space-y-2">
+                      {m.steps && m.steps.length > 0 && (
+                        <AgentSteps steps={m.steps} onOrderAction={setRefundOrder} />
+                      )}
+                      <MessageBubble
+                        role={m.role}
+                        text={m.content}
+                        isLast={i === agentMessages.length - 1}
+                        busy={generating}
+                        onCite={(n) => void handleCite(n)}
+                        onRegenerate={regenerateAgent}
+                        intent={m.intent}
+                        mode={mode}
+                      />
+                    </div>
+                  ))}
+                  {agentStreaming && !agentMessages[agentMessages.length - 1]?.content && (
+                    <div className="flex items-center gap-2 text-sm text-ink-subtle">
+                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-subtle" />
+                      Agent 思考中…
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* 处理方案卡片（系统消息式，✕ 关闭） */}
+              {escalation && (
+                <EscalationCard data={escalation} onClose={() => setEscalation(null)} />
+              )}
+            </div>
           </div>
+
 
           {/* 错误内联提示（生成错误 / 会话错误合并） */}
           {displayError && (
-            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              <p className="font-medium">出错了</p>
-              <p className="mt-1 break-all">{displayError}</p>
-              <button
-                type="button"
-                onClick={retryError}
-                className="mt-2 text-red-600 underline underline-offset-2 hover:text-red-800"
-              >
-                {agentError || error ? '重试' : '知道了'}
-              </button>
+            <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+              <div className="rounded-card border border-red-200 bg-red-50 px-4 py-3 text-sm text-danger">
+                <p className="font-medium">出错了</p>
+                <p className="mt-1 break-words">{displayError}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={retryError}
+                  className="mt-2 px-0 text-danger hover:bg-transparent hover:text-red-700"
+                >
+                  {agentError || error ? '重试' : '知道了'}
+                </Button>
+              </div>
             </div>
           )}
 
           {/* 输入区 */}
-          <form onSubmit={handleSubmit} className="border-t border-slate-200 py-4">
-            {/* 视觉识别结果预览 */}
-            {visionResult && (
-              <div className="mb-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs">
-                <p className="font-medium text-brand-700">🖼️ 图片识别结果</p>
-                {visionResult.title && (
-                  <p className="mt-1 text-slate-700">标题：{visionResult.title}</p>
-                )}
-                {visionResult.selling_points && (
-                  <ul className="mt-1 list-inside list-disc text-slate-600">
-                    {visionResult.selling_points.map((p, i) => (
-                      <li key={i}>{p}</li>
-                    ))}
-                  </ul>
-                )}
-                {visionResult.description && (
-                  <p className="mt-1 text-slate-600">描述：{visionResult.description}</p>
-                )}
-                {visionResult.raw && <p className="mt-1 text-slate-500">{visionResult.raw}</p>}
-                <button
-                  type="button"
-                  onClick={() => setVisionResult(null)}
-                  className="mt-1 text-brand-600 underline underline-offset-2 hover:text-brand-800"
-                >
-                  关闭
-                </button>
-              </div>
-            )}
-            <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 shadow-sm focus-within:border-brand-500">
-              {/* 图片上传按钮 */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={visionLoading}
-                title="上传商品图，AI 生成文案"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
-              >
-                {visionLoading ? '⏳' : '🖼️'}
-              </button>
-              {/* 语音输入按钮 */}
-              <button
-                type="button"
-                onClick={toggleVoice}
-                title={listening ? '停止录音' : '语音输入'}
-                className={`rounded-lg p-2 ${
-                  listening
-                    ? 'animate-pulse bg-red-100 text-red-600'
-                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
-                }`}
-              >
-                {listening ? '🔴' : '🎤'}
-              </button>
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  mode === 'rag'
-                    ? '输入你的电商运营问题，Enter 发送…'
-                    : '描述任务（如：查店铺数据并给建议），Enter 发送…'
-                }
-                rows={2}
-                className="flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-slate-400"
-              />
-              {busy && generating ? (
-                <button
-                  type="button"
-                  onClick={handleStop}
-                  className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
-                >
-                  停止
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={!input.trim() || busy}
-                  className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  发送
-                </button>
+          <form
+            onSubmit={handleSubmit}
+            className="sticky bottom-0 shrink-0 border-t border-line bg-surface/95 backdrop-blur"
+          >
+            <div className="mx-auto w-full max-w-3xl px-4 py-3">
+              {/* 视觉识别结果预览 */}
+              {visionResult && (
+                <div className="mb-2 rounded-card border border-brand-200 bg-brand-50 px-3 py-2 text-xs">
+                  <p className="font-medium text-brand-700">图片识别结果</p>
+                  {visionResult.title && (
+                    <p className="mt-1 text-ink">标题：{visionResult.title}</p>
+                  )}
+                  {visionResult.selling_points && (
+                    <ul className="mt-1 list-inside list-disc text-ink-muted">
+                      {visionResult.selling_points.map((p, i) => (
+                        <li key={i}>{p}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {visionResult.description && (
+                    <p className="mt-1 text-ink-muted">描述：{visionResult.description}</p>
+                  )}
+                  {visionResult.raw && <p className="mt-1 text-ink-subtle">{visionResult.raw}</p>}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setVisionResult(null)}
+                    className="mt-1 px-0 text-brand-600 hover:bg-transparent hover:text-brand-700"
+                  >
+                    关闭
+                  </Button>
+                </div>
               )}
+              <div className="flex items-end gap-2 rounded-control border border-line bg-surface p-2 shadow-card focus-within:border-brand-500">
+                {/* 图片上传按钮 */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageUpload}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={visionLoading}
+                  title="上传商品图，AI 生成文案"
+                  aria-label="上传商品图"
+                  className="px-2 py-2 text-base"
+                >
+                  {visionLoading ? '⏳' : '🖼️'}
+                </Button>
+                {/* 语音输入按钮 */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleVoice}
+                  title={listening ? '停止录音' : '语音输入'}
+                  aria-label={listening ? '停止录音' : '语音输入'}
+                  className={`px-2 py-2 text-base ${listening ? 'bg-red-100 text-danger' : ''}`}
+                >
+                  {listening ? '🔴' : '🎤'}
+                </Button>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    mode === 'rag'
+                      ? '输入你的电商运营问题，Enter 发送…'
+                      : '描述任务（如：查店铺数据并给建议），Enter 发送…'
+                  }
+                  rows={2}
+                  className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-subtle"
+                />
+                {busy && generating ? (
+                  <Button variant="secondary" size="md" onClick={handleStop}>
+                    停止
+                  </Button>
+                ) : (
+                  <Button type="submit" variant="primary" size="md" disabled={!input.trim() || busy}>
+                    发送
+                  </Button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-ink-subtle">
+                {mode === 'rag'
+                  ? 'RAG 模式：知识库增强问答，回答带 [1][2] 角标，点击可查来源'
+                  : 'Agent 模式：自动调用工具（数据/知识库/文案/合规），可多步推理'}
+              </p>
             </div>
-            <p className="mt-2 text-xs text-slate-400">
-              {mode === 'rag'
-                ? 'RAG 模式：知识库增强问答，回答带 [1][2] 角标，点击可查来源'
-                : 'Agent 模式：自动调用工具（数据/知识库/文案/合规），可多步推理'}
-            </p>
           </form>
         </div>
       </div>

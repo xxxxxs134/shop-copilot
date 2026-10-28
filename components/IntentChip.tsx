@@ -111,7 +111,7 @@ export function IntentChip({ intent, mode }: { intent: IntentInfo; mode: Session
     <div className="flex max-w-full flex-col items-end gap-1">
       <span
         title={intent.reason}
-        className={`inline-block max-w-full truncate rounded-full border px-2 py-0.5 text-[11px] leading-4 ${
+        className={`inline-block max-w-full truncate rounded-full border px-2 py-0.5 text-xs leading-4 ${
           intent.switched
             ? 'border-amber-200 bg-amber-50 text-amber-700'
             : 'border-brand-100 bg-brand-50 text-brand-700'
@@ -125,7 +125,7 @@ export function IntentChip({ intent, mode }: { intent: IntentInfo; mode: Session
             <span
               key={type}
               title={type}
-              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] leading-4 text-slate-600"
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs leading-4 text-slate-600"
             >
               <span aria-hidden="true">{ENTITY_ICONS[type] ?? '🏷️'}</span>
               {value}
@@ -138,7 +138,7 @@ export function IntentChip({ intent, mode }: { intent: IntentInfo; mode: Session
                   ? ` · 触发：${intent.sentiment.cues.join('、')}`
                   : ''
               }`}
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-4 ${meta.className}`}
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-4 ${meta.className}`}
             >
               <span aria-hidden="true">{meta.icon}</span>
               {meta.display}

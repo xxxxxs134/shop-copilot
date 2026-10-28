@@ -1,13 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/cn';
 import type { SessionId, SessionMeta, SessionMode } from '@/lib/sessionsClient';
 
 /**
- * 会话侧边栏（左 260px，可折叠）
+ * 会话侧边栏（展开 240px / 折叠 56px）
  *
  * 职责：会话列表（mode 徽章/更新时间）、新建会话、行内改名、两步删除确认。
  * 数据与持久化逻辑都在 ChatWindow（会话状态机）里，本组件纯展示 + 事件回调。
+ * <lg 展开时以抽屉形式覆盖内容区，点遮罩关闭。
  */
 export function Sidebar({
   sessions,
@@ -52,175 +56,173 @@ export function Sidebar({
 
   if (collapsed) {
     return (
-      <aside className="flex w-12 shrink-0 flex-col items-center gap-3 border-r border-slate-200 bg-white py-4">
-        <button
-          type="button"
+      <aside className="flex w-14 shrink-0 flex-col items-center gap-3 border-r border-line bg-surface py-4">
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onToggle}
-          title="展开会话列表"
-          className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+          aria-label="展开会话列表"
+          className="h-9 w-9 p-0"
         >
           ☰
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
           onClick={onCreate}
           disabled={busy}
-          title="新建会话"
-          className="rounded-lg bg-brand-600 p-2 text-white transition hover:bg-brand-700 disabled:opacity-40"
+          aria-label="新建会话"
+          className="h-9 w-9 p-0"
         >
           ＋
-        </button>
+        </Button>
       </aside>
     );
   }
 
   return (
-    <aside className="flex w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white">
-      {/* 头部：标题 + 折叠 */}
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <div>
-          <p className="text-sm font-bold text-brand-700">店智 Copilot</p>
-          <p className="text-[11px] text-slate-400">会话历史</p>
+    <>
+      <button
+        type="button"
+        aria-label="关闭会话列表"
+        onClick={onToggle}
+        className="fixed inset-0 z-30 bg-ink/30 backdrop-blur-sm lg:hidden"
+      />
+      <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-surface max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <p className="text-sm font-bold text-brand-700">会话</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggle}
+            aria-label="收起会话列表"
+            className="h-8 w-8 p-0"
+          >
+            ☰
+          </Button>
         </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          title="收起侧边栏"
-          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-        >
-          ☰
-        </button>
-      </div>
 
-      {/* 新建会话 */}
-      <div className="px-3 py-3">
-        <button
-          type="button"
-          onClick={onCreate}
-          disabled={busy}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          ＋ 新建会话
-        </button>
-        <p className="mt-1.5 text-center text-[10px] text-slate-400">
-          新会话将以当前模式（{mode === 'rag' ? 'RAG 问答' : 'Agent'}）创建
-        </p>
-      </div>
+        <div className="px-3 py-3">
+          <Button variant="primary" onClick={onCreate} disabled={busy} className="w-full">
+            ＋ 新建会话
+          </Button>
+          <p className="mt-1.5 text-center text-xs text-ink-subtle">
+            新会话将以当前模式（{mode === 'rag' ? 'RAG 问答' : 'Agent'}）创建
+          </p>
+        </div>
 
-      {/* 会话列表 */}
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
-        {sessions.length === 0 && (
-          <p className="px-2 py-6 text-center text-xs text-slate-400">暂无会话</p>
-        )}
-        {sessions.map((s) => {
-          const active = s.id === activeId;
-          const editing = editingId === s.id;
-          const confirming = confirmDeleteId === s.id;
-          return (
-            <div
-              key={s.id}
-              className={`group relative rounded-lg px-2 py-2 transition ${
-                active ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-slate-50'
-              }`}
-            >
-              {editing ? (
-                <input
-                  ref={editInputRef}
-                  value={draftTitle}
-                  onChange={(e) => setDraftTitle(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename();
-                    if (e.key === 'Escape') setEditingId(null);
-                  }}
-                  className="w-full rounded border border-brand-300 bg-white px-1.5 py-0.5 text-sm outline-none"
-                />
-              ) : confirming ? (
-                <div className="flex items-center justify-between gap-1">
-                  <span className="truncate text-xs text-red-600">删除该会话？</span>
-                  <span className="flex shrink-0 gap-1">
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+          {sessions.length === 0 && (
+            <p className="px-2 py-6 text-center text-xs text-ink-subtle">暂无会话</p>
+          )}
+          {sessions.map((s) => {
+            const active = s.id === activeId;
+            const editing = editingId === s.id;
+            const confirming = confirmDeleteId === s.id;
+            return (
+              <div
+                key={s.id}
+                className={cn(
+                  'group relative rounded-control px-2 py-2 transition',
+                  active ? 'bg-brand-50' : 'hover:bg-surface-muted',
+                )}
+              >
+                {editing ? (
+                  <input
+                    ref={editInputRef}
+                    value={draftTitle}
+                    onChange={(e) => setDraftTitle(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename();
+                      if (e.key === 'Escape') setEditingId(null);
+                    }}
+                    className="w-full rounded-control border border-brand-300 bg-surface px-1.5 py-0.5 text-sm outline-none"
+                  />
+                ) : confirming ? (
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="truncate text-xs text-danger">删除该会话？</span>
+                    <span className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDelete(s.id);
+                          setConfirmDeleteId(null);
+                        }}
+                        className="rounded bg-danger px-1.5 py-0.5 text-xs text-white hover:bg-red-700"
+                      >
+                        删除
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-ink-muted hover:bg-line"
+                      >
+                        取消
+                      </button>
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(s.id)}
+                    className="block w-full text-left"
+                    title={s.title}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Badge tone={s.mode === 'rag' ? 'info' : 'brand'}>
+                        {s.mode === 'rag' ? 'RAG' : 'AGENT'}
+                      </Badge>
+                      <span
+                        className={cn(
+                          'truncate text-sm',
+                          active ? 'font-medium text-brand-700' : 'text-ink',
+                        )}
+                      >
+                        {s.title}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-xs text-ink-subtle">
+                      {formatTime(s.updated_at)}
+                    </span>
+                  </button>
+                )}
+
+                {!editing && !confirming && (
+                  <span className="absolute right-1.5 top-2 hidden gap-0.5 group-hover:flex">
                     <button
                       type="button"
                       onClick={() => {
-                        onDelete(s.id);
-                        setConfirmDeleteId(null);
+                        setEditingId(s.id);
+                        setDraftTitle(s.title);
                       }}
-                      className="rounded bg-red-600 px-1.5 py-0.5 text-[11px] text-white hover:bg-red-700"
+                      title="重命名"
+                      className="rounded p-1 text-ink-subtle transition hover:bg-surface hover:text-brand-600"
                     >
-                      删除
+                      ✎
                     </button>
                     <button
                       type="button"
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-200"
+                      onClick={() => setConfirmDeleteId(s.id)}
+                      title="删除"
+                      className="rounded p-1 text-ink-subtle transition hover:bg-surface hover:text-danger"
                     >
-                      取消
+                      🗑
                     </button>
                   </span>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onSelect(s.id)}
-                  className="block w-full text-left"
-                  title={s.title}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold ${
-                        s.mode === 'rag'
-                          ? 'bg-sky-100 text-sky-700'
-                          : 'bg-violet-100 text-violet-700'
-                      }`}
-                    >
-                      {s.mode === 'rag' ? 'RAG' : 'AGENT'}
-                    </span>
-                    <span className={`truncate text-sm ${active ? 'font-medium text-brand-800' : 'text-slate-700'}`}>
-                      {s.title}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block text-[10px] text-slate-400">
-                    {formatTime(s.updated_at)}
-                  </span>
-                </button>
-              )}
+                )}
+              </div>
+            );
+          })}
+        </nav>
 
-              {/* 行内操作：改名 / 删除（hover 显示，编辑/确认态隐藏） */}
-              {!editing && !confirming && (
-                <span className="absolute right-1.5 top-2 hidden gap-0.5 group-hover:flex">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingId(s.id);
-                      setDraftTitle(s.title);
-                    }}
-                    title="重命名"
-                    className="rounded p-1 text-slate-400 transition hover:bg-white hover:text-brand-600"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDeleteId(s.id)}
-                    title="删除"
-                    className="rounded p-1 text-slate-400 transition hover:bg-white hover:text-red-600"
-                  >
-                    🗑
-                  </button>
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </nav>
-
-      {/* 底部说明 */}
-      <div className="border-t border-slate-200 px-4 py-3 text-[10px] leading-relaxed text-slate-400">
-        会话本地持久化（data/app.db），刷新不丢失。
-        <br />
-        AI 能力经 FastAPI 接入层，前端不直连模型。
-      </div>
-    </aside>
+        <div className="border-t border-line px-4 py-3 text-xs leading-relaxed text-ink-subtle">
+          会话本地持久化（data/app.db），刷新不丢失。
+          <br />
+          AI 能力经 FastAPI 接入层，前端不直连模型。
+        </div>
+      </aside>
+    </>
   );
 }
 

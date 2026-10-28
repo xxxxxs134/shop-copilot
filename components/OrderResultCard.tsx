@@ -26,7 +26,10 @@ export function OrderResultCard({ data, onAction }: { data: Record<string, unkno
   const product = productName(data);
   const created = typeof data.created_at === 'string' ? data.created_at : '';
   const status = String(data.status ?? '');
-  const refundable = ['paid', 'shipped', 'received', 'refunding', 'rejected'].includes(status);
+  const refundable = [
+    'paid', 'shipped', 'received', 'refunding', 'rejected',
+    '已支付', '已发货', '已收货', '退款中', '已拒绝',
+  ].includes(status);
 
   return (
     <div className="mt-1 rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs">

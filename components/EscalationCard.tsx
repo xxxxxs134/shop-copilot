@@ -88,7 +88,7 @@ export function EscalationCard({ data, onClose }: {
                 <button
                   type="button"
                   onClick={() => void copyScript(sc.text, i)}
-                  className="rounded-md px-2 py-1 text-[11px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                  className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                   title="复制话术"
                 >
                   {copiedIdx === i ? '✓ 已复制' : '复制'}

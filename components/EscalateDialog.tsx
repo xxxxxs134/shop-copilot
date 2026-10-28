@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+import { Button } from './ui/Button';
 
 /**
  * 生成处理方案确认对话框（运营助手入口）
@@ -20,62 +22,75 @@ export function EscalateDialog({
 }) {
   const [reason, setReason] = useState('');
 
+  // 弹窗打开期间锁定背景滚动，卸载时还原
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
+  // Esc 关闭
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="escalate-dialog-title"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface shadow-xl"
       >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">生成处理方案</h2>
+        <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+          <h2 id="escalate-dialog-title" className="text-lg font-semibold text-ink">生成处理方案</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-control p-1 text-ink-subtle transition hover:bg-surface-subtle hover:text-ink-muted"
             aria-label="关闭"
           >
             ✕
           </button>
         </div>
 
-        <p className="text-sm leading-relaxed text-slate-600">
-          系统将汇总当前会话上下文，生成情况摘要、建议动作与可复制话术，辅助你快速制定处理方案。
-        </p>
+        <div className="space-y-4 px-5 pb-4">
+          <p className="text-sm leading-relaxed text-ink-muted">
+            系统将汇总当前会话上下文，生成情况摘要、建议动作与可复制话术，辅助你快速制定处理方案。
+          </p>
 
-        <div className="mt-4">
-          <label htmlFor="escalate-reason" className="mb-1 block text-sm text-slate-500">
-            补充说明（选填）
-          </label>
-          <textarea
-            id="escalate-reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            placeholder="如：客户情绪激动 / 退款争议 / 需要重点跟进…"
-            className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-400"
-          />
+          <div>
+            <label htmlFor="escalate-reason" className="mb-1 block text-sm text-ink-muted">
+              补充说明（选填）
+            </label>
+            <textarea
+              id="escalate-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="如：客户情绪激动 / 退款争议 / 需要重点跟进…"
+              className="w-full resize-none rounded-control border border-line bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-subtle focus:border-brand-400"
+            />
+          </div>
         </div>
 
-        <div className="mt-4 flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={() => onSubmit(reason)}
-            disabled={pending}
-            className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
+        {/* 底部操作：右对齐 */}
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+          <Button variant="secondary" onClick={onClose} disabled={pending}>取消</Button>
+          <Button onClick={() => onSubmit(reason)} disabled={pending}>
             {pending ? '生成中…' : '生成处理方案'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

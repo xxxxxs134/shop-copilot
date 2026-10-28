@@ -35,7 +35,7 @@ export function OrderTimeline({ events }: { events: Array<{ date: string; label:
             >
               {e.label}
             </p>
-            <p className="text-[10px] text-slate-400">{e.date}</p>
+            <p className="text-xs text-slate-400">{e.date}</p>
           </div>
         </div>
       ))}

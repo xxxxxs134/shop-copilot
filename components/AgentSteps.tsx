@@ -74,9 +74,17 @@ function parseOrderData(summary: unknown): Record<string, unknown> | null {
   } else {
     raw = summary;
   }
-  return raw !== null && typeof raw === 'object' && 'order_id' in raw
-    ? (raw as Record<string, unknown>)
-    : null;
+  if (raw === null || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if ('order_id' in obj) return obj;
+  const orders = obj.orders;
+  if (Array.isArray(orders) && orders.length === 1) {
+    const first = orders[0];
+    if (first !== null && typeof first === 'object' && 'order_id' in first) {
+      return first as Record<string, unknown>;
+    }
+  }
+  return null;
 }
 
 /** 可出办理回执的行动类工具（与 TOOL_ACTION 一一对应） */
@@ -132,14 +140,14 @@ export function AgentSteps({ steps, onOrderAction }: { steps: AgentStep[]; onOrd
       {steps.map((step, index) => (
         <Fragment key={step.id}>
           {index > 0 && (
-            <div aria-hidden="true" className="text-center text-[10px] leading-none text-slate-300">
+            <div aria-hidden="true" className="text-center text-xs leading-none text-ink-subtle">
               ↓
             </div>
           )}
           <StepCard step={step} onOrderAction={onOrderAction} />
         </Fragment>
       ))}
-      <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+      <div className="flex items-center gap-2 rounded-card border border-line bg-surface-muted px-3 py-2 text-xs text-ink-muted">
         <span>⚙️ 调用了 {stepCount} 个工具</span>
       </div>
     </div>
@@ -170,7 +178,7 @@ function StepCard({ step, onOrderAction }: { step: AgentStep; onOrderAction?: (o
     step.tool === 'order_lookup' && step.done ? parseOrderData(step.summary) : null;
 
   return (
-    <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
+    <div className="rounded-card border border-line bg-surface px-3 py-2 text-xs">
       {/* 折叠行：工具名 · 简短参数 · 状态 · 耗时（点击展开详情） */}
       <button
         type="button"
@@ -179,36 +187,38 @@ function StepCard({ step, onOrderAction }: { step: AgentStep; onOrderAction?: (o
         className="flex w-full items-center gap-2 text-left"
       >
         <span aria-hidden="true">{icon}</span>
-        <span className="shrink-0 font-medium text-slate-700">{label}</span>
+        <span className="shrink-0 font-medium text-ink">{label}</span>
         {argsBrief && (
-          <span className="min-w-0 truncate text-slate-400">· {argsBrief}</span>
+          <span className="min-w-0 truncate text-ink-subtle">· {argsBrief}</span>
         )}
         {!step.done && (
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-slate-400">
-            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-ink-subtle">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink-subtle" />
             运行中
           </span>
         )}
-        {step.done && <span className="ml-auto shrink-0 text-emerald-600">✓ 完成</span>}
-        {durationText && <span className="shrink-0 text-slate-400">{durationText}</span>}
-        <span aria-hidden="true" className="shrink-0 text-slate-400">
+        {step.done && <span className="ml-auto shrink-0 text-success">✓ 完成</span>}
+        {durationText && <span className="shrink-0 text-ink-subtle">{durationText}</span>}
+        <span aria-hidden="true" className="shrink-0 text-ink-subtle">
           {expanded ? '▴' : '▾'}
         </span>
       </button>
 
+      {/* 订单查询结果卡：无需展开即可看到，便于直接发起退款 */}
+      {orderData && <OrderResultCard data={orderData} onAction={onOrderAction} />}
+
       {/* 展开区：推理理由 + 完整参数 + result summary + 结果卡片 */}
       {expanded && (
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <p className="text-slate-600">💭 {reason}</p>
-          {argsBrief && <p className="mt-1 break-all text-slate-500">{argsBrief}</p>}
+        <div className="mt-2 border-t border-line pt-2">
+          <p className="text-ink-muted">💭 {reason}</p>
+          {argsBrief && <p className="mt-1 break-all text-ink-muted">{argsBrief}</p>}
           {step.summary && (
-            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 text-slate-600">
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-control border border-line bg-surface-muted p-2 text-ink-muted">
               {typeof step.summary === 'string'
                 ? step.summary
                 : JSON.stringify(step.summary, null, 2)}
             </pre>
           )}
-          {orderData && <OrderResultCard data={orderData} onAction={onOrderAction} />}
           {actionResult && (
             <ActionResultCard action={actionResult.action} data={actionResult.data} />
           )}

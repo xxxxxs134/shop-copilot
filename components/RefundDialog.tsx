@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { Button } from "./ui/Button";
 
 interface OrderInfo {
   order_id: string;
@@ -16,9 +18,9 @@ interface ValidateResult {
   token?: string;
   preview?: {
     order_id: string;
-    refund_amount: number;
+    amount: number;
     after_amount: number;
-    product: string;
+    item: string;
   };
   violations?: string[];
 }
@@ -45,6 +47,24 @@ export function RefundDialog({ order, onClose }: { order: OrderInfo; onClose: ()
   const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
   const [executeResult, setExecuteResult] = useState<ExecuteResult | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // 弹窗打开期间锁定背景滚动，卸载时还原
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
+  // Esc 关闭
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   async function handleValidate() {
     setLoading(true);
@@ -87,119 +107,130 @@ export function RefundDialog({ order, onClose }: { order: OrderInfo; onClose: ()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="refund-dialog-title"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface shadow-xl"
       >
         {/* 标题 */}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">
+        <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+          <h2 id="refund-dialog-title" className="text-lg font-semibold text-ink">
             {step === "executed" ? (executeResult?.ok ? "退款成功" : "退款未执行") : "退款确认"}
           </h2>
-          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className="rounded-control p-1 text-ink-subtle transition hover:bg-surface-subtle hover:text-ink-muted"
+          >
             ✕
           </button>
         </div>
 
-        {/* 订单详情 */}
-        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div><span className="text-slate-400">订单号：</span><span className="text-slate-700">{order.order_id}</span></div>
-            <div><span className="text-slate-400">商品：</span><span className="text-slate-700">{order.product}</span></div>
-            <div><span className="text-slate-400">买家：</span><span className="text-slate-700">{order.buyer}</span></div>
-            <div><span className="text-slate-400">实付：</span><span className="font-medium text-slate-800">¥{order.amount}</span></div>
+        <div className="space-y-4 px-5 pb-4">
+          {/* 订单详情 */}
+          <div className="rounded-card border border-line bg-surface-muted p-3">
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><span className="text-ink-subtle">订单号：</span><span className="text-ink-muted">{order.order_id}</span></div>
+              <div><span className="text-ink-subtle">商品：</span><span className="text-ink-muted">{order.product}</span></div>
+              <div><span className="text-ink-subtle">买家：</span><span className="text-ink-muted">{order.buyer}</span></div>
+              <div><span className="text-ink-subtle">实付：</span><span className="font-medium text-ink">¥{order.amount}</span></div>
+            </div>
           </div>
+
+          {/* Step 1: 输入金额 */}
+          {step === "input" && (
+            <>
+              <div>
+                <label htmlFor="refund-amount" className="mb-1 block text-sm text-ink-muted">退款金额</label>
+                <input
+                  id="refund-amount"
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-subtle focus:border-brand-400"
+                  min="0.01"
+                  max={order.amount}
+                  step="0.01"
+                />
+              </div>
+              {validateResult && !validateResult.ok && (
+                <div className="rounded-card border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">
+                  {validateResult.violations?.map((v, i) => <p key={i}>• {v}</p>)}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Step 2: 校验通过 → 预览 + 确认 */}
+          {step === "validated" && validateResult?.ok && (
+            <div className="rounded-card border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-success">
+              <p>✅ 校验通过</p>
+              <p className="mt-1 text-xs text-success/80">退款 ¥{validateResult.preview?.amount}，剩余 ¥{validateResult.preview?.after_amount}，请确认后执行</p>
+            </div>
+          )}
+
+          {/* Step 3: 执行结果 */}
+          {step === "executed" && (
+            <>
+              {executeResult?.ok ? (
+                <div className="rounded-card border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-success">
+                  <p className="font-medium">
+                    {executeResult.idempotent ? "已退款（幂等回执）" : "退款成功"}
+                  </p>
+                  {executeResult.receipt && (
+                    <div className="mt-2 space-y-1 text-xs text-success/80">
+                      <p>订单：{executeResult.receipt.order_id}</p>
+                      <p>退款：¥{executeResult.receipt.refund_amount}，剩余 ¥{executeResult.receipt.after_amount}</p>
+                      <p>售后单：#{executeResult.receipt.aftersales_id} · {executeResult.receipt.status}</p>
+                      <p>时间：{executeResult.receipt.executed_at}</p>
+                    </div>
+                  )}
+                  {executeResult.message && <p className="mt-1 text-xs">{executeResult.message}</p>}
+                </div>
+              ) : (
+                <div className="rounded-card border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">
+                  {executeResult?.violations?.map((v, i) => <p key={i}>• {v}</p>)}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
-        {/* Step 1: 输入金额 */}
-        {step === "input" && (
-          <>
-            <div className="mb-4">
-              <label className="mb-1 block text-sm text-slate-500">退款金额</label>
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
-                min="0.01"
-                max={order.amount}
-                step="0.01"
-              />
-            </div>
-            {validateResult && !validateResult.ok && (
-              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-                {validateResult.violations?.map((v, i) => <p key={i}>• {v}</p>)}
-              </div>
-            )}
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
-                取消
-              </button>
-              <button
-                onClick={handleValidate}
-                disabled={loading}
-                className="flex-1 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
-              >
+        {/* 底部操作：右对齐 */}
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+          {step === "input" && (
+            <>
+              <Button variant="secondary" onClick={onClose}>取消</Button>
+              <Button onClick={handleValidate} disabled={loading}>
                 {loading ? "校验中..." : "下一步：校验"}
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Step 2: 校验通过 → 预览 + 确认 */}
-        {step === "validated" && validateResult?.ok && (
-          <>
-            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              <p>✅ 校验通过</p>
-              <p className="mt-1 text-xs text-emerald-600">退款 ¥{validateResult.preview?.refund_amount}，剩余 ¥{validateResult.preview?.after_amount}，请确认后执行</p>
-            </div>
-            <div className="flex gap-3">
-              <button
+              </Button>
+            </>
+          )}
+          {step === "validated" && validateResult?.ok && (
+            <>
+              <Button
+                variant="secondary"
                 onClick={() => { setStep("input"); setValidateResult(null); }}
-                className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
               >
                 返回修改
-              </button>
-              <button
-                onClick={handleExecute}
-                disabled={loading}
-                className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
-              >
+              </Button>
+              <Button variant="danger" onClick={handleExecute} disabled={loading}>
                 {loading ? "执行中..." : "确认退款"}
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Step 3: 执行结果 */}
-        {step === "executed" && (
-          <>
-            {executeResult?.ok ? (
-              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
-                <p className="font-medium">
-                  {executeResult.idempotent ? "已退款（幂等回执）" : "退款成功"}
-                </p>
-                {executeResult.receipt && (
-                  <div className="mt-2 space-y-1 text-xs text-emerald-600">
-                    <p>订单：{executeResult.receipt.order_id}</p>
-                    <p>退款：¥{executeResult.receipt.refund_amount}，剩余 ¥{executeResult.receipt.after_amount}</p>
-                    <p>售后单：#{executeResult.receipt.aftersales_id} · {executeResult.receipt.status}</p>
-                    <p>时间：{executeResult.receipt.executed_at}</p>
-                  </div>
-                )}
-                {executeResult.message && <p className="mt-1 text-xs">{executeResult.message}</p>}
-              </div>
-            ) : (
-              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-                {executeResult?.violations?.map((v, i) => <p key={i}>• {v}</p>)}
-              </div>
-            )}
-            <button onClick={onClose} className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
-              关闭
-            </button>
-          </>
-        )}
+              </Button>
+            </>
+          )}
+          {step === "executed" && (
+            <Button variant="secondary" onClick={onClose}>关闭</Button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -130,8 +130,9 @@ async def run_agent(
                 else:
                     result = REGISTRY[fn_name].call(fn_args)
 
-                # 结果摘要（前 120 字）
-                summary = result[:120] + ("…" if len(result) > 120 else "")
+                # 结果摘要（默认前 120 字；order_lookup 需完整 JSON 供前端订单卡解析）
+                limit = 4000 if fn_name == "order_lookup" else 120
+                summary = result[:limit] + ("…" if len(result) > limit else "")
                 yield {"type": "step_result", "tool": fn_name, "summary": summary}
 
                 messages.append({

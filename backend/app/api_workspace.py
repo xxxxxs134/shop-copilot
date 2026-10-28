@@ -162,6 +162,25 @@ def _aftersales_dist(aftersales: list[dict]) -> dict[str, int]:
     return dist
 
 
+def _order_index(orders: list[dict]) -> dict[str, dict]:
+    """订单号 → 订单，供售后单补齐买家/商品（订单行含 buyer 与 items）。"""
+    return {str(o.get("order_id", "")): o for o in orders if o.get("order_id")}
+
+
+def _order_buyer(order: dict | None) -> str:
+    """关联订单的买家昵称（脱敏形式，来自 orders.buyer）。"""
+    return str((order or {}).get("buyer") or "")
+
+
+def _order_product(order: dict | None) -> str:
+    """关联订单的首个商品名称；无明细时回退 SKU。"""
+    items = (order or {}).get("items") or []
+    if not items or not isinstance(items[0], dict):
+        return ""
+    first = items[0]
+    return str(first.get("name") or first.get("sku") or "")
+
+
 @router.get("/v1/workspace/summary", summary="运营工作台概览")
 async def get_workspace_summary() -> dict:
     """返回 KPI 卡片数据 + 待处理事项 + 最近会话。任何异常降级为空数据。"""
@@ -210,10 +229,12 @@ async def get_workspace_summary() -> dict:
             ),
         }
 
-        # 待处理事项：退款中 + 被拒的售后单
+        # 待处理事项：退款中 + 被拒的售后单（补关联订单的买家与商品，前端直接展示）
+        orders_by_id = _order_index(orders)
         pending = []
         for af in aftersales:
-            if af.get("status") in ("refunding", "被拒", "rejected"):
+            if af.get("status") in ("refunding", "退款中", "被拒", "rejected"):
+                order = orders_by_id.get(str(af.get("order_id", "")))
                 pending.append(
                     {
                         "order_id": af.get("order_id", ""),
@@ -221,6 +242,8 @@ async def get_workspace_summary() -> dict:
                         "amount": af.get("amount", 0),
                         "status": af.get("status", ""),
                         "date": af.get("created_at", ""),
+                        "buyer": _order_buyer(order),
+                        "product": _order_product(order),
                     }
                 )
         pending = pending[:5]
@@ -296,6 +319,9 @@ async def get_workspace_summary() -> dict:
             "pending": [],
             "recent_sessions": [],
             "insights": [],
+            "top_products": [],
+            "traffic_sources": {},
+            "kb_stats": {"doc_count": 0, "chunk_count": 0, "retrieval_score": 0},
             "daily_trend": [],
             "order_status_dist": _order_status_dist([]),
             "aftersales_dist": {},

@@ -8,6 +8,7 @@ export const ORDER_STATUS_META: Record<string, { label: string; tone: Tone }> = 
   refunded: { label: '已退款', tone: 'neutral' },
   rejected: { label: '被拒', tone: 'danger' },
   unpaid: { label: '未付', tone: 'neutral' },
+  intercepted: { label: '已拦截', tone: 'neutral' },
   // 售后单接口返回中文状态，保留同义映射，避免徽章语气回退
   退款中: { label: '退款中', tone: 'warning' },
   被拒: { label: '被拒', tone: 'danger' },

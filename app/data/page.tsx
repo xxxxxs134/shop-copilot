@@ -29,13 +29,15 @@ const STATUS_OPTIONS: Record<Tab, Array<{ value: string; label: string }>> = {
     { value: "refunded", label: "已退款" },
     { value: "rejected", label: "被拒" },
     { value: "unpaid", label: "未付" },
+    { value: "intercepted", label: "已拦截" },
   ],
   products: [],
   aftersales: [
     { value: "", label: "全部状态" },
-    { value: "refunding", label: "退款中" },
+    { value: "退款中", label: "退款中" },
+    { value: "待寄回", label: "待寄回" },
     { value: "被拒", label: "被拒" },
-    { value: "refunded", label: "已退款" },
+    { value: "已完成", label: "已完成" },
   ],
 };
 

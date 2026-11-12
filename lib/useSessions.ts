@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * 会话状态机（从 ChatWindow 抽取，保持组件 <250 LOC）
@@ -75,7 +75,7 @@ function firstUserTitle(payload: unknown[]): string | null {
 export function useSessions(opts: UseSessionsOptions) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [activeId, setActiveId] = useState<SessionId | null>(null);
-  const [mode, setMode] = useState<SessionMode>('rag');
+  const [mode, setMode] = useState<SessionMode>('agent');
   const [collapsed, setCollapsed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

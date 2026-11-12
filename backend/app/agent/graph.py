@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import operator
@@ -44,6 +45,7 @@ class AgentState(TypedDict):
     confidence: float
     draft: str             # specialist 草稿
     evidence: list[dict]   # 工具证据（传给终审，防幻觉）
+    kb_hits: list[dict]    # 知识库命中（供 [n] 引用溯源）
     escalation_ticket: dict | None   # 投诉工单
     thought_chain: Annotated[list[dict], operator.add]  # 思考链（append 语义）
     final: str             # 终审回复（前端取这个）
@@ -85,8 +87,9 @@ ESCALATION_PROMPT = """你是电商客服的投诉升级处理专员。客户的
 REVIEW_SYSTEM = """你是客服回复的终审员。根据客服草稿和工具查到的证据，生成最终回复。
 规则：
 1. 只保留有工具证据支持的信息，草稿里没有证据支撑的猜测一律删除
-2. 语气统一为亲切、专业的中文客服口吻
-3. 直接输出最终回复，不要任何前缀或解释"""
+2. 如果提供了知识库证据（[1][2]...），回答中涉及这些内容时用 [n] 角标标注来源，客户可点开核对
+3. 语气统一为亲切、专业的中文客服口吻
+4. 直接输出最终回复，不要任何前缀或解释"""
 
 
 # ── 节点 ──────────────────────────────────────────────
@@ -115,15 +118,16 @@ async def clarify_node(state: AgentState) -> dict:
     }
 
 
-async def _run_react(messages: list[dict], tools: list[Any], system: str) -> tuple[str, list[dict]]:
-    """ReAct 循环：返回 (最终文本, 工具证据)。复用现有 Tool 注册表。"""
+async def _run_react(messages: list[dict], tools: list[Any], system: str) -> tuple[str, list[dict], list[dict]]:
+    """ReAct 循环：返回 (最终文本, 工具证据, 知识库命中)。kb_search 结果单独收集供 [n] 引用。"""
     msgs = [{"role": "system", "content": system}, *messages]
     evidence: list[dict] = []
+    kb_hits: list[dict] = []
     for _ in range(MAX_STEPS):
         msg = await chat(msgs, tools=tools, temperature=0.3)
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
-            return (msg.get("content") or "").strip(), evidence
+            return (msg.get("content") or "").strip(), evidence, kb_hits
         msgs.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
         for tc in tool_calls:
             fn = tc.get("function", {})
@@ -133,28 +137,43 @@ async def _run_react(messages: list[dict], tools: list[Any], system: str) -> tup
             except json.JSONDecodeError:
                 args = {}
             if name in REGISTRY:
-                result = REGISTRY[name].call(args)
+                # 同步工具（含 retrieve/embedding）放线程池，避免阻塞事件循环
+                result = await asyncio.to_thread(REGISTRY[name].call, args)
+                # 收集知识库命中（供终审 [n] 引用 + 前端 CitationCard）
+                if name == "kb_search":
+                    try:
+                        parsed = json.loads(result)
+                        for item in parsed.get("items", []):
+                            kb_hits.append({
+                                "title": item.get("title", ""),
+                                "category": item.get("category", ""),
+                                "text": item.get("text", ""),
+                            })
+                    except (json.JSONDecodeError, TypeError):
+                        pass
             else:
                 result = json.dumps({"error": f"未知工具: {name}"}, ensure_ascii=False)
             evidence.append({"tool": name, "args": args, "result": result[:200]})
             msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": result})
-    return "", evidence
+    return "", evidence, kb_hits
 
 
 async def presales_node(state: AgentState) -> dict:
-    text, evidence = await _run_react(state["messages"], PRESALES_TOOLS, PRESALES_SYSTEM)
+    text, evidence, kb_hits = await _run_react(state["messages"], PRESALES_TOOLS, PRESALES_SYSTEM)
     return {
         "draft": text,
         "evidence": evidence,
+        "kb_hits": kb_hits,
         "thought_chain": [_thought("presales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
     }
 
 
 async def aftersales_node(state: AgentState) -> dict:
-    text, evidence = await _run_react(state["messages"], AFTERSALES_TOOLS, AFTERSALES_SYSTEM)
+    text, evidence, kb_hits = await _run_react(state["messages"], AFTERSALES_TOOLS, AFTERSALES_SYSTEM)
     return {
         "draft": text,
         "evidence": evidence,
+        "kb_hits": kb_hits,
         "thought_chain": [_thought("aftersales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
     }
 
@@ -198,9 +217,16 @@ async def review_node(state: AgentState) -> dict:
         evidence_block = "\n".join(
             f"- [{e['tool']}] {e['result']}" for e in state.get("evidence", [])
         ) or "（无工具证据）"
+        kb_hits = state.get("kb_hits", [])
+        kb_block = ""
+        if kb_hits:
+            lines = []
+            for i, h in enumerate(kb_hits, 1):
+                lines.append(f"[{i}] {h.get('title','')}（{h.get('category','')}）：{h.get('text','')}")
+            kb_block = "\n\n知识库证据（回答时用 [n] 角标引用）：\n" + "\n".join(lines)
         msgs = [
             {"role": "system", "content": REVIEW_SYSTEM},
-            {"role": "user", "content": f"客服草稿：\n{state.get('draft', '')}\n\n工具证据：\n{evidence_block}"},
+            {"role": "user", "content": f"客服草稿：\n{state.get('draft', '')}\n\n工具证据：\n{evidence_block}{kb_block}"},
         ]
         final = await chat_text(msgs, temperature=0.2)
     final = (final or state.get("draft") or "抱歉，我暂时无法回答，请稍后再试。").strip()
@@ -245,9 +271,9 @@ def build_graph():
 _graph = build_graph()
 
 
-async def run_customer_agent(history: list[dict], user_text: str) -> tuple[str, list[dict]]:
-    """对外入口：跑图，返回 (最终回复, 思考链)。"""
+async def run_customer_agent(history: list[dict], user_text: str) -> tuple[str, list[dict], list[dict]]:
+    """对外入口：跑图，返回 (最终回复, 思考链, 知识库命中)。"""
     result = await _graph.ainvoke(
         {"messages": [*history, {"role": "user", "content": user_text}]},
     )
-    return result.get("final", ""), result.get("thought_chain", [])
+    return result.get("final", ""), result.get("thought_chain", []), result.get("kb_hits", [])

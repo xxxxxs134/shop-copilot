@@ -32,10 +32,9 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : '未知错误';
+  } catch {
     return Response.json(
-      { error: `无法连接 Python AI 层（${FASTAPI_BASE}）: ${msg}` },
+      { title: '视觉服务未就绪', status: 502, detail: '视觉服务暂时不可用，请稍后重试', code: 'UPSTREAM_502', retryable: true },
       { status: 502 },
     );
   }

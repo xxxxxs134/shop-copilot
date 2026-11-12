@@ -8,13 +8,14 @@
   POST /v1/kb/rebuild         全量重建（复用 pipeline.build()），返回耗时与块数
 
 约定：
-- 错误响应与 main.py 一致：{"error": {"message": "中文"}}，绝不裸抛 traceback。
+- 错误响应统一走 RFC 9457 problem+json（见 backend/app/errors.py），绝不裸抛 traceback、不泄漏内部命令。
 - 行更新优先 table.update()（lancedb 0.40 实测支持向量列）。
 - 集成协议（P5 §7）：本文件不改 main.py，由整合者统一 include_router(router)。
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 
@@ -22,16 +23,30 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from .errors import Problem
 from .rag import pipeline
 from .rag.pipeline import INDEX_ROOT, get_embedder
 from .rag.retrieve import get_retriever, invalidate_retriever
 
+logger = logging.getLogger("shop-copilot.api_kb")
+
 router = APIRouter()
 
+_TITLE = {400: "请求格式有误", 404: "未找到", 500: "知识库服务异常"}
+_CODE = {400: "INVALID_INPUT", 404: "NOT_FOUND", 500: "KB_INTERNAL"}
 
-def _err(status: int, message: str) -> JSONResponse:
-    """统一错误响应体：{"error": {"message": "..."}}（与 main.py 约定一致）。"""
-    return JSONResponse(status_code=status, content={"error": {"message": message}})
+
+def _err(status: int, detail: str, exc: Exception | None = None) -> JSONResponse:
+    """统一错误响应体（RFC 9457 problem+json）；技术细节只进日志，不泄漏给用户。"""
+    if exc is not None:
+        logger.warning("kb 错误: %s -> %s", detail, exc)
+    return Problem(
+        title=_TITLE.get(status, "请求失败"),
+        status=status,
+        detail=detail,
+        code=_CODE.get(status, f"HTTP_{status}"),
+        retryable=status in (429, 500, 502, 503, 504),
+    ).response()
 
 
 def _open_table():
@@ -59,7 +74,7 @@ def kb_docs() -> list[dict]:
     """文档列表：按 doc_id 聚合索引行，返回 id/title/category/source/chunk_count。"""
     table = _open_table()
     if table is None:
-        return _err(404, "索引不存在（先执行 python -m backend.app.rag.pipeline build）")
+        return _err(404, "知识库索引尚未构建，请先在知识库页完成索引构建")
     docs: list[dict] = []
     seen: dict[str, int] = {}
     for row in _read_rows(table):
@@ -86,7 +101,7 @@ def kb_chunks(doc: str | None = None) -> list[dict]:
         return _err(400, "缺少查询参数 doc（文档 id）")
     table = _open_table()
     if table is None:
-        return _err(404, "索引不存在（先执行 python -m backend.app.rag.pipeline build）")
+        return _err(404, "知识库索引尚未构建，请先在知识库页完成索引构建")
     chunks = [
         {
             "id": str(row["id"]),
@@ -111,7 +126,7 @@ def kb_chunk_update(chunk_id: str, body: ChunkUpdateBody) -> dict:
         return _err(400, "text 不能为空")
     table = _open_table()
     if table is None:
-        return _err(404, "索引不存在（先执行 python -m backend.app.rag.pipeline build）")
+        return _err(404, "知识库索引尚未构建，请先在知识库页完成索引构建")
     if not any(str(row["id"]) == chunk_id for row in _read_rows(table)):
         return _err(404, f"切片不存在: {chunk_id}")
 
@@ -121,14 +136,14 @@ def kb_chunk_update(chunk_id: str, body: ChunkUpdateBody) -> dict:
     try:
         vector = [float(x) for x in embedder.embed([text])[0]]
     except Exception as exc:
-        return _err(500, f"重嵌入失败: {exc}")
+        return _err(500, "切片保存失败，请稍后重试", exc)
 
     # 行更新：优先 table.update()（lancedb 0.40 支持向量列；id 含 # 但无引号，转义单引号即可）
     where = "id = '" + chunk_id.replace("'", "''") + "'"
     try:
         table.update(where=where, values={"text": text, "vector": vector})
     except Exception as exc:
-        return _err(500, f"更新索引行失败: {exc}")
+        return _err(500, "切片保存失败，请稍后重试", exc)
 
     invalidate_retriever()
     return {"ok": True, "id": chunk_id}
@@ -141,10 +156,10 @@ def kb_rebuild() -> dict:
     try:
         code = pipeline.build()
     except Exception as exc:
-        return _err(500, f"重建失败: {exc}")
+        return _err(500, "索引重建失败，请稍后重试", exc)
     elapsed = time.perf_counter() - started
     if code != 0:
-        return _err(500, "重建失败：未找到语料（data/raw）")
+        return _err(500, "索引重建失败：未找到知识库语料")
     invalidate_retriever()
     table = _open_table()
     chunk_count = table.count_rows() if table is not None else 0

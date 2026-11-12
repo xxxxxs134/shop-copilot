@@ -34,10 +34,9 @@ async function proxy(req: Request, path: string[]): Promise<Response> {
       status: upstream.status,
       headers: { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' },
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '未知错误';
+  } catch {
     return Response.json(
-      { error: { message: `AI 接入层（${BACKEND_URL}）不可达：${message}` } },
+      { title: '服务未就绪', status: 502, detail: '服务暂时不可用，请稍后重试', code: 'UPSTREAM_502', retryable: true },
       { status: 502 },
     );
   }

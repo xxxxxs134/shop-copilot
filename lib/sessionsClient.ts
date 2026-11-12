@@ -18,6 +18,7 @@
 import type { UIMessage } from 'ai';
 import type { AgentStep } from '@/components/AgentSteps';
 import type { IntentInfo } from './intentClient';
+import { parseProblem, problemMessage } from './errors';
 
 export type SessionMode = 'rag' | 'agent';
 
@@ -57,24 +58,6 @@ export interface CitationSource {
   url?: string;
 }
 
-interface ApiErrorBody {
-  error?: { message?: string } | string;
-  detail?: string | Array<{ msg: string }>;
-  message?: string;
-}
-
-/** 统一解析 FastAPI 错误体为可展示文案 */
-function parseError(body: ApiErrorBody | null, status: number): string {
-  if (body) {
-    if (typeof body.error === 'string') return body.error;
-    if (body.error && typeof body.error.message === 'string') return body.error.message;
-    if (typeof body.detail === 'string') return body.detail;
-    if (Array.isArray(body.detail) && body.detail[0]) return body.detail[0].msg;
-    if (typeof body.message === 'string') return body.message;
-  }
-  return `请求失败（HTTP ${status}）`;
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -86,9 +69,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         ...init?.headers,
       },
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '网络错误';
-    throw new Error(`无法连接服务（请确认后端已启动）：${message}`);
+  } catch {
+    throw new Error('无法连接服务，请稍后重试');
   }
 
   let body: unknown = null;
@@ -98,7 +80,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // 非 JSON 响应（如 502 HTML），走状态码兜底
   }
   if (!res.ok) {
-    throw new Error(parseError((body ?? null) as ApiErrorBody | null, res.status));
+    throw new Error(problemMessage(parseProblem(body)));
   }
   return body as T;
 }

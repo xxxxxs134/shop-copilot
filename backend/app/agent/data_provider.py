@@ -23,6 +23,7 @@ P5 扩展（docs/plan-p5.md §3.2）：Protocol 新增 5 个**可选**方法
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import time
@@ -30,6 +31,8 @@ import uuid
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable, Protocol
+
+logger = logging.getLogger("shop-copilot.agent.data_provider")
 
 STORE_DB = Path(__file__).resolve().parents[3] / "data" / "store.db"
 
@@ -1035,7 +1038,8 @@ def snapshot_json(date: str | None = None) -> str:
     try:
         snap = get_provider().get_snapshot(date)
     except Exception as exc:  # noqa: BLE001 — 工具层兜底，不让 Agent 循环崩
-        return json.dumps({"error": f"数据源查询失败: {exc}"}, ensure_ascii=False)
+        logger.warning("数据源快照查询失败: %s", exc)
+        return json.dumps({"error": "经营数据暂时无法获取，请稍后重试"}, ensure_ascii=False)
     return json.dumps(snap, ensure_ascii=False)
 
 

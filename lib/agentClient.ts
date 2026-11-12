@@ -6,8 +6,10 @@
  *   data: {"type":"step_result","tool":"...","summary":"..."}  — 工具结果
  *   data: {"type":"delta","text":"..."}                        — 流式文本片段
  *   data: {"type":"done","citations":[...]}                    — 结束
- *   data: {"type":"error","message":"..."}                     — 错误
+ *   data: {"type":"error","message":"...","code":"...","retryable":bool}  — 错误（友好文案）
  */
+
+import { parseProblem, problemMessage } from './errors';
 
 export interface AgentStepEvent {
   type: 'step';
@@ -34,6 +36,8 @@ export interface AgentDoneEvent {
 export interface AgentErrorEvent {
   type: 'error';
   message: string;
+  code?: string;
+  retryable?: boolean;
 }
 
 export type AgentEvent =
@@ -61,14 +65,13 @@ export async function* streamAgent(
   });
 
   if (!res.ok) {
-    let msg = `请求失败 (${res.status})`;
+    let errBody: unknown = null;
     try {
-      const errBody = await res.json();
-      msg = errBody.error || errBody.message || msg;
+      errBody = await res.json();
     } catch {
       // ignore
     }
-    throw new Error(msg);
+    throw new Error(problemMessage(parseProblem(errBody)));
   }
 
   if (!res.body) {

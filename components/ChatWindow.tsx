@@ -24,6 +24,7 @@ import {
   type IntentInfo,
   type IntentUIMessage,
 } from '@/lib/intentClient';
+import { parseProblem, problemMessage } from '@/lib/errors';
 
 /** SpeechRecognition 最小接口（浏览器 API 无官方 TS 类型） */
 interface SpeechRecognitionLike {
@@ -39,6 +40,42 @@ interface SpeechRecognitionLike {
 /** UIMessage → 纯文本（只取 text part） */
 function uiText(m: UIMessage): string {
   return (m.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
+}
+
+/**
+ * 会话库里的历史消息可能只有 { role, content }；
+ * AI SDK v7 的 useChat/UI 渲染需要 parts，这里统一补齐。
+ */
+function toUIMessages(raw: unknown[]): UIMessage[] {
+  const messages: UIMessage[] = [];
+
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue;
+    const message = item as {
+      id?: unknown;
+      role?: unknown;
+      content?: unknown;
+      parts?: unknown;
+    };
+    if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'system') {
+      continue;
+    }
+
+    const parts: UIMessage['parts'] = Array.isArray(message.parts)
+      ? (message.parts as UIMessage['parts'])
+      : typeof message.content === 'string'
+        ? [{ type: 'text', text: message.content }]
+        : [];
+    if (parts.length === 0) continue;
+
+    messages.push({
+      id: typeof message.id === 'string' ? message.id : crypto.randomUUID(),
+      role: message.role,
+      parts,
+    });
+  }
+
+  return messages;
 }
 
 /**
@@ -96,7 +133,7 @@ export function ChatWindow() {
     onSessionLoaded: (sess) => {
       stickRef.current = true;
       if (sess.mode === 'rag') {
-        setMessages(sess.messages as UIMessage[]);
+        setMessages(toUIMessages(sess.messages));
         setAgentMessages([]);
       } else {
         setAgentMessages(sess.messages as AgentMessage[]);
@@ -426,7 +463,7 @@ export function ChatWindow() {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || `视觉模型返回 ${res.status}`);
+        throw new Error(problemMessage(parseProblem(data)));
       }
       setVisionResult(data);
       if (data.title) setInput(data.title);

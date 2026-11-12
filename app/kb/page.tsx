@@ -9,6 +9,7 @@ import { PageContainer } from '@/components/ui/PageContainer';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
+import { parseProblem, problemMessage } from '@/lib/errors';
 
 /**
  * 知识库管理页（P5 §4.2）
@@ -62,24 +63,7 @@ interface ToastState {
 /** C9 检索自测得分（backend/.../selftest.py 最近一次结果，用于统计卡展示） */
 const RETRIEVAL_SCORE = 90;
 
-// ── 请求层（与 lib/sessionsClient.ts 同款：同源代理 + FastAPI 错误体解析） ──
-
-interface ApiErrorBody {
-  error?: { message?: string } | string;
-  detail?: string | Array<{ msg: string }>;
-  message?: string;
-}
-
-function parseError(body: ApiErrorBody | null, status: number): string {
-  if (body) {
-    if (typeof body.error === 'string') return body.error;
-    if (body.error && typeof body.error.message === 'string') return body.error.message;
-    if (typeof body.detail === 'string') return body.detail;
-    if (Array.isArray(body.detail) && body.detail[0]) return body.detail[0].msg;
-    if (typeof body.message === 'string') return body.message;
-  }
-  return `请求失败（HTTP ${status}）`;
-}
+// ── 请求层（同源代理 + 统一错误解析，见 lib/errors.ts） ──
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
@@ -92,9 +76,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         ...init?.headers,
       },
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '网络错误';
-    throw new Error(`无法连接服务（请确认后端已启动）：${message}`);
+  } catch {
+    throw new Error('无法连接服务，请稍后重试');
   }
 
   let body: unknown = null;
@@ -104,7 +87,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // 非 JSON 响应（如 502 HTML），走状态码兜底
   }
   if (!res.ok) {
-    throw new Error(parseError((body ?? null) as ApiErrorBody | null, res.status));
+    throw new Error(problemMessage(parseProblem(body)));
   }
   return body as T;
 }

@@ -11,18 +11,22 @@
   {"type":"step_result","tool":"kb_search","summary":"..."} — 工具结果摘要
   {"type":"delta","text":"淘宝"}                           — 流式文本片段
   {"type":"done","citations":[{"title":"...","category":"..."}]}  — 结束+引用
-  {"type":"error","message":"..."}                         — 错误
+   {"type":"error","message":"...","code":"...","retryable":bool}  — 错误（友好文案，技术细节进日志）
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 from typing import AsyncIterator
 
 import httpx
 
 from .tools import REGISTRY, list_schemas
+
+logger = logging.getLogger("shop-copilot.agent.loop")
 
 MAX_STEPS = 5
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -68,7 +72,7 @@ async def run_agent(
 ) -> AsyncIterator[dict]:
     """ReAct 主循环，产出事件字典流（供 SSE 序列化）。"""
     if not DEEPSEEK_API_KEY:
-        yield {"type": "error", "message": "缺少 DEEPSEEK_API_KEY，请在 backend/.env 配置后重启后端"}
+        yield {"type": "error", "message": "AI 服务未配置，请联系管理员完成配置", "code": "CONFIG_MISSING", "retryable": False}
         return
 
     messages = [
@@ -87,18 +91,33 @@ async def run_agent(
                 "tools": tools,
                 "stream": False,
             }
+            resp = None
+            for attempt in range(4):
+                try:
+                    resp = await client.post(
+                        f"{DEEPSEEK_BASE_URL}/chat/completions",
+                        json=payload,
+                        headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+                    )
+                    if resp.status_code not in (429, 500, 502, 503, 504):
+                        break
+                except httpx.HTTPError:
+                    resp = None
+                    if attempt == 3:
+                        break
+                if attempt < 3:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+            if resp is None:
+                yield {"type": "error", "message": "AI 服务暂时不可用，请稍后重试", "code": "UPSTREAM_502", "retryable": True}
+                return
+            if resp.status_code != 200:
+                logger.warning("Agent 上游非 200: status=%s body=%s", resp.status_code, resp.text[:300])
+                yield {"type": "error", "message": "AI 服务暂时无法处理您的请求，请稍后重试", "code": f"UPSTREAM_{resp.status_code}", "retryable": True}
+                return
             try:
-                resp = await client.post(
-                    f"{DEEPSEEK_BASE_URL}/chat/completions",
-                    json=payload,
-                    headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
-                )
-                if resp.status_code != 200:
-                    yield {"type": "error", "message": f"DeepSeek 返回 {resp.status_code}: {resp.text[:300]}"}
-                    return
                 data = resp.json()
-            except httpx.HTTPError as exc:
-                yield {"type": "error", "message": f"连接 DeepSeek 失败: {exc}"}
+            except ValueError:
+                yield {"type": "error", "message": "AI 服务返回异常，请稍后重试", "code": "UPSTREAM_BAD_RESPONSE", "retryable": True}
                 return
 
             msg = data["choices"][0]["message"]
@@ -142,4 +161,4 @@ async def run_agent(
                 })
 
         # 超出最大步数
-        yield {"type": "error", "message": f"已达最大工具调用步数（{MAX_STEPS}），请简化问题或分步提问"}
+        yield {"type": "error", "message": "这个问题涉及步骤较多，请简化问题或分步提问", "code": "MAX_STEPS", "retryable": False}

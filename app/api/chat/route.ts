@@ -10,6 +10,43 @@ import { deepseekProvider } from '@/lib/ai';
 /** 允许流式响应最长 30 秒（Vercel/本地通用） */
 export const maxDuration = 30;
 
+/**
+ * 会话库里的历史消息可能只有 { role, content }；
+ * AI SDK v7 的 convertToModelMessages 需要 UIMessage.parts。
+ * 在边界处补齐，避免切回旧 RAG 会话时 500。
+ */
+function normalizeMessages(raw: unknown[]): UIMessage[] {
+  const normalized: UIMessage[] = [];
+
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue;
+    const message = item as {
+      id?: unknown;
+      role?: unknown;
+      content?: unknown;
+      parts?: unknown;
+    };
+    if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'system') {
+      continue;
+    }
+
+    const parts: UIMessage['parts'] = Array.isArray(message.parts)
+      ? (message.parts as UIMessage['parts'])
+      : typeof message.content === 'string'
+        ? [{ type: 'text', text: message.content }]
+        : [];
+    if (parts.length === 0) continue;
+
+    normalized.push({
+      id: typeof message.id === 'string' ? message.id : crypto.randomUUID(),
+      role: message.role,
+      parts,
+    });
+  }
+
+  return normalized;
+}
+
 /** 系统提示词：定义「店智 Copilot」的角色与行为边界 */
 const SYSTEM_PROMPT = [
   '你是「店智 Copilot」，一名专业的电商运营 AI 助手，服务于中小电商卖家。',
@@ -29,13 +66,18 @@ const SYSTEM_PROMPT = [
  * - 请求体非法：返回 400
  */
 export async function POST(req: Request) {
-  let messages: UIMessage[];
+  let rawMessages: unknown[];
   try {
     const body = await req.json();
-    messages = body.messages;
-    if (!Array.isArray(messages)) throw new Error('messages 必须是数组');
+    rawMessages = body.messages;
+    if (!Array.isArray(rawMessages)) throw new Error('messages 必须是数组');
   } catch {
     return Response.json({ error: '请求体格式不正确（需要 { messages: [...] }）' }, { status: 400 });
+  }
+
+  const messages = normalizeMessages(rawMessages);
+  if (messages.length === 0) {
+    return Response.json({ error: 'messages 中没有可用的对话内容' }, { status: 400 });
   }
 
   const result = streamText({

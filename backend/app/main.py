@@ -12,7 +12,9 @@
   uvicorn backend.app.main:app --port 8000
 """
 
+import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -24,7 +26,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .rag.retrieve import retrieve
-from .agent.loop import run_agent
+from .agent.graph import run_customer_agent
 from . import store
 from .api_intent import router as intent_router
 from .api_kb import router as kb_router
@@ -32,6 +34,14 @@ from .api_workspace import router as workspace_router
 from .api_data import router as data_router
 from .api_refund import router as refund_router
 from .api_escalation import router as escalation_router
+from .errors import (
+    ProblemException,
+    config_error,
+    input_error,
+    not_found,
+    register_error_handlers,
+    upstream_error,
+)
 
 # 读取 backend/.env 中的密钥（不进 git）
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -39,6 +49,8 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() not in ("0", "false", "no")
+
+logger = logging.getLogger("shop-copilot.main")
 
 
 def _last_user_text(messages: list) -> str | None:
@@ -92,6 +104,9 @@ app.include_router(data_router)
 app.include_router(refund_router)
 app.include_router(escalation_router)
 
+# 统一错误协议（RFC 9457 problem+json），见 docs/plan-error-handling.md
+register_error_handlers(app)
+
 
 @app.get("/health")
 async def health() -> dict:
@@ -119,18 +134,8 @@ class SessionMessagesBody(BaseModel):
 def _session_or_404(sid: str) -> dict:
     sess = store.get_session(sid)
     if sess is None:
-        raise _Http404("会话不存在")
+        raise not_found("会话不存在")
     return sess
-
-
-class _Http404(Exception):
-    def __init__(self, message: str):
-        self.message = message
-
-
-@app.exception_handler(_Http404)
-async def _http404_handler(_request: Request, exc: _Http404) -> JSONResponse:
-    return JSONResponse(status_code=404, content={"error": {"message": exc.message}})
 
 
 @app.get("/v1/sessions")
@@ -142,7 +147,7 @@ async def sessions_list() -> list[dict]:
 @app.post("/v1/sessions", status_code=201)
 async def sessions_create(body: SessionCreateBody) -> dict:
     if body.mode not in store.VALID_MODES:
-        return JSONResponse(status_code=400, content={"error": {"message": f"mode 必须是 {store.VALID_MODES}"}})
+        raise input_error(f"mode 必须是 {store.VALID_MODES}")
     title = (body.title or "").strip() or "新对话"
     return store.create_session(title, body.mode)
 
@@ -156,11 +161,11 @@ async def sessions_get(sid: str) -> dict:
 async def sessions_patch(sid: str, body: SessionPatchBody) -> dict:
     _session_or_404(sid)
     if body.title is None and body.mode is None:
-        return JSONResponse(status_code=400, content={"error": {"message": "title 或 mode 至少提供一个"}})
+        raise input_error("title 或 mode 至少提供一个")
     if body.mode is not None and body.mode not in store.VALID_MODES:
-        return JSONResponse(status_code=400, content={"error": {"message": f"mode 必须是 {store.VALID_MODES}"}})
+        raise input_error(f"mode 必须是 {store.VALID_MODES}")
     if body.title is not None and not body.title.strip():
-        return JSONResponse(status_code=400, content={"error": {"message": "title 不能为空"}})
+        raise input_error("title 不能为空")
     store.patch_session(sid, title=body.title, mode=body.mode)
     return {"ok": True}
 
@@ -208,15 +213,14 @@ async def chat_completions(request: Request):
     - 上游非 200 时返回 JSON 错误（带中文说明），便于前端优雅展示
     """
     if not DEEPSEEK_API_KEY:
-        return JSONResponse(
-            status_code=400,
-            content={"error": {"message": "缺少 DEEPSEEK_API_KEY，请在 backend/.env 配置后重启后端"}},
-        )
+        raise config_error()
 
     try:
         payload = await request.json()
     except Exception:
-        return JSONResponse(status_code=400, content={"error": {"message": "请求体不是合法 JSON"}})
+        raise input_error("请求体不是合法 JSON")
+    if not isinstance(payload, dict):
+        raise input_error("请求体格式不正确，需要 JSON 对象")
 
     payload["stream"] = True  # 前端 useChat 依赖流式
     # 接入层兜底模型名（前端可不传，传了则以调用方为准）
@@ -240,16 +244,31 @@ async def chat_completions(request: Request):
             headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
         )
         # stream=True：先拿响应头即可判断成败，不必等整个 body
-        upstream = await client.send(upstream_request, stream=True)
-
-        if upstream.status_code != 200:
+        upstream = None
+        for attempt in range(4):
+            try:
+                upstream = await client.send(upstream_request, stream=True)
+            except httpx.HTTPError:
+                upstream = None
+                if attempt == 3:
+                    break
+                await asyncio.sleep(1.0 * (attempt + 1))
+                continue
+            if upstream.status_code == 200:
+                break
+            status_code = upstream.status_code
             body = (await upstream.aread()).decode("utf-8", "replace")
             await upstream.aclose()
+            upstream = None
+            if status_code not in (429, 500, 502, 503, 504) or attempt == 3:
+                logger.warning("上游返回非 200: status=%s body=%s", status_code, body[:500])
+                await client.aclose()
+                raise upstream_error(status_code)
+            await asyncio.sleep(1.0 * (attempt + 1))
+
+        if upstream is None:
             await client.aclose()
-            return JSONResponse(
-                status_code=upstream.status_code,
-                content={"error": {"message": f"DeepSeek 返回错误: {body[:500]}"}},
-            )
+            raise upstream_error(502)
 
         async def relay():
             """把 DeepSeek 的 SSE 字节流原样转发给前端"""
@@ -267,10 +286,8 @@ async def chat_completions(request: Request):
         )
     except httpx.HTTPError as exc:
         await client.aclose()
-        return JSONResponse(
-            status_code=502,
-            content={"error": {"message": f"连接 DeepSeek 失败: {exc}"}},
-        )
+        logger.warning("连接上游失败: %s", exc)
+        raise upstream_error(502)
 
 
 @app.post("/v1/agent/chat")
@@ -286,32 +303,40 @@ async def agent_chat(request: Request):
       {"type":"error","message":"..."}                     — 错误
     """
     if not DEEPSEEK_API_KEY:
-        return JSONResponse(
-            status_code=400,
-            content={"error": {"message": "缺少 DEEPSEEK_API_KEY，请在 backend/.env 配置后重启后端"}},
-        )
+        raise config_error()
 
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse(status_code=400, content={"error": {"message": "请求体不是合法 JSON"}})
+        raise input_error("请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        raise input_error("请求体格式不正确，需要 JSON 对象")
 
     user_text = (body.get("message") or "").strip()
     if not user_text:
-        return JSONResponse(status_code=400, content={"error": {"message": "message 不能为空"}})
+        raise input_error("message 不能为空")
 
     history = body.get("history") or []
 
-    # 可选：前端情绪标注（如 "焦虑"），非字符串/缺省一律视为无情绪
-    raw_sentiment = body.get("sentiment")
-    sentiment = raw_sentiment.strip() if isinstance(raw_sentiment, str) else None
-
     async def event_stream():
         try:
-            async for event in run_agent(user_text, history, sentiment):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            final, thought_chain = await run_customer_agent(history, user_text)
+            # 简易流式：按字符块发 delta（前端 agentRun 兼容）；思考链随 done 下发
+            chunk_size = 8
+            for i in range(0, len(final), chunk_size):
+                yield f"data: {json.dumps({'type': 'delta', 'text': final[i : i + chunk_size]}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'citations': [], 'thought_chain': thought_chain}, ensure_ascii=False)}\n\n"
+        except ProblemException as exc:
+            err = {
+                "type": "error",
+                "message": exc.problem.detail or exc.problem.title,
+                "code": exc.problem.code,
+                "retryable": exc.problem.retryable,
+            }
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
         except Exception as exc:  # noqa: BLE001 — 兜底，不让 SSE 中断
-            err = {"type": "error", "message": f"Agent 内部错误: {exc}"}
+            logger.exception("Agent 内部错误: %s", exc)
+            err = {"type": "error", "message": "服务出现异常，请稍后重试", "code": "INTERNAL_ERROR", "retryable": True}
             yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -341,20 +366,19 @@ async def vision_caption(request: Request):
       {"title": "...", "selling_points": ["...", "..."], "description": "..."}
     """
     if not VISION_API_KEY:
-        return JSONResponse(
-            status_code=400,
-            content={"error": {"message": "缺少 VISION_API_KEY（智谱 GLM-4V），请在 backend/.env 配置后重启后端"}},
-        )
+        raise config_error("视觉模型未配置，请联系管理员完成配置")
 
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse(status_code=400, content={"error": {"message": "请求体不是合法 JSON"}})
+        raise input_error("请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        raise input_error("请求体格式不正确，需要 JSON 对象")
 
     image_url = body.get("image_url")
     image_b64 = body.get("image_base64")
     if not image_url and not image_b64:
-        return JSONResponse(status_code=400, content={"error": {"message": "需要 image_url 或 image_base64"}})
+        raise input_error("需要 image_url 或 image_base64")
 
     # 构造 GLM-4V 消息（OpenAI 兼容格式）
     if image_url:
@@ -388,13 +412,12 @@ async def vision_caption(request: Request):
                 headers={"Authorization": f"Bearer {VISION_API_KEY}"},
             )
         except httpx.HTTPError as exc:
-            return JSONResponse(status_code=502, content={"error": {"message": f"连接视觉模型失败: {exc}"}})
+            logger.warning("连接视觉模型失败: %s", exc)
+            raise upstream_error(502, detail="视觉服务暂时不可用，请稍后重试")
 
     if resp.status_code != 200:
-        return JSONResponse(
-            status_code=resp.status_code,
-            content={"error": {"message": f"视觉模型返回 {resp.status_code}: {resp.text[:300]}"}},
-        )
+        logger.warning("视觉模型返回非 200: status=%s body=%s", resp.status_code, resp.text[:300])
+        raise upstream_error(resp.status_code)
 
     data = resp.json()
     content = data["choices"][0]["message"]["content"]

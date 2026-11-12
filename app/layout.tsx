@@ -4,8 +4,8 @@ import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
 import { MobileNav } from '@/components/MobileNav';
 
 export const metadata: Metadata = {
-  title: '店智 Copilot - 中小电商运营者的 AI 工作台',
-  description: '面向中小电商运营者的 AI Agent 工作台：对话问答、数据分析、商品文案',
+  title: '店智 Copilot - 电商智能客服',
+  description: '面向客户的电商全链路智能客服 Agent：商品咨询、智能推荐、订单售后',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -11,9 +11,7 @@ interface SidebarEntry {
 }
 
 const NAV_ITEMS: readonly SidebarEntry[] = [
-  { icon: '🏠', label: '工作台', href: '/workspace' },
-  { icon: '💬', label: '对话', href: '/chat' },
-  { icon: '📊', label: '数据', href: '/data' },
+  { icon: '💬', label: '客服对话', href: '/chat' },
   { icon: '📦', label: '知识库', href: '/kb' },
 ];
 
@@ -24,7 +22,7 @@ export function WorkspaceSidebar() {
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
       <div className="border-b border-line px-5 py-5">
         <p className="text-sm font-bold text-brand-700">店智 Copilot</p>
-        <p className="mt-0.5 text-xs text-ink-subtle">运营工作台</p>
+        <p className="mt-0.5 text-xs text-ink-subtle">电商智能客服</p>
       </div>
 
       <nav className="space-y-1 px-2 py-3">

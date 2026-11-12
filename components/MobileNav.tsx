@@ -5,9 +5,7 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
 
 const NAV_ITEMS = [
-  { icon: '🏠', label: '工作台', href: '/workspace' },
-  { icon: '💬', label: '对话', href: '/chat' },
-  { icon: '📊', label: '数据', href: '/data' },
+  { icon: '💬', label: '客服对话', href: '/chat' },
   { icon: '📦', label: '知识库', href: '/kb' },
 ] as const;
 

@@ -81,7 +81,8 @@ async def get_aftersales() -> list[dict]:
 @router.get("/v1/data/order/{order_id}", summary="订单详情")
 async def get_order_detail(order_id: str) -> dict:
     try:
-        orders = get_provider().get_orders(order_id) or []
+        provider = get_provider()
+        orders = provider.get_orders(order_id) or []
         if not orders:
             raise HTTPException(status_code=404, detail="订单不存在")
         o = orders[0]
@@ -89,20 +90,53 @@ async def get_order_detail(order_id: str) -> dict:
 
         status = o.get("status", "")
         date = o.get("created_at", "")
+        amount = float(o.get("amount") or 0)
 
-        timeline = [{"date": date, "label": "下单", "status": "done"}]
+        timeline = [
+            {"date": date, "label": "下单", "status": "done", "detail": "订单已创建"},
+        ]
         if status != "unpaid":
-            timeline.append({"date": date, "label": "支付", "status": "done"})
+            timeline.append(
+                {"date": date, "label": "支付", "status": "done", "detail": f"已支付 ¥{amount:.2f}"}
+            )
         if status in ("shipped", "received", "refunding", "refunded", "rejected"):
-            timeline.append({"date": date, "label": "发货", "status": "done"})
-        if status in ("refunding",):
-            timeline.append({"date": date, "label": "退款中", "status": "current"})
-        elif status in ("refunded",):
-            timeline.append({"date": date, "label": "已退款", "status": "done"})
-        elif status in ("rejected",):
-            timeline.append({"date": date, "label": "退款被拒", "status": "done"})
-        elif status == "received":
-            timeline.append({"date": date, "label": "确认收货", "status": "done"})
+            carrier = str(o.get("carrier") or "")
+            tracking = str(o.get("tracking_no") or "")
+            if carrier and tracking:
+                ship_detail = f"{carrier} · {tracking}"
+            elif carrier:
+                ship_detail = carrier
+            elif status in ("shipped", "received"):
+                ship_detail = "已交付承运商"
+            else:
+                ship_detail = "订单已进入售后流程"
+            timeline.append(
+                {"date": date, "label": "发货", "status": "done", "detail": ship_detail}
+            )
+        if status == "received":
+            timeline.append(
+                {"date": date, "label": "确认收货", "status": "done", "detail": "买家已确认收货"}
+            )
+
+        aftersales = sorted(
+            provider.get_aftersales(order_id) or [],
+            key=lambda a: str(a.get("created_at", "")),
+        )
+        for af in aftersales:
+            af_status = str(af.get("status") or "")
+            af_type = str(af.get("type") or "售后")
+            af_amount = float(af.get("amount") or 0)
+            if af_status == "退款中":
+                label, detail, tone = "退款中", f"{af_type} ¥{af_amount:.2f}，等待商家处理", "current"
+            elif af_status == "被拒":
+                label, detail, tone = "退款被拒", f"{af_type} ¥{af_amount:.2f}，申请未通过", "done"
+            elif af_status == "已完成":
+                label, detail, tone = "退款完成", f"{af_type} ¥{af_amount:.2f}，退款已完成", "done"
+            else:
+                continue
+            timeline.append(
+                {"date": af.get("created_at", ""), "label": label, "status": tone, "detail": detail}
+            )
 
         return {
             "order_id": o.get("order_id", ""),
@@ -117,4 +151,4 @@ async def get_order_detail(order_id: str) -> dict:
         raise
     except Exception as exc:
         logger.exception("订单详情异常: %s", exc)
-        raise HTTPException(status_code=500, detail="查询失败")
+        raise HTTPException(status_code=500, detail="订单数据查询失败，请稍后重试")

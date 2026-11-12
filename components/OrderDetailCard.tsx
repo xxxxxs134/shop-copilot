@@ -11,7 +11,7 @@ interface OrderDetail {
   amount: number;
   status: string;
   date: string;
-  timeline: Array<{ date: string; label: string; status: string }>;
+  timeline: Array<{ date: string; label: string; status: string; detail?: string }>;
 }
 
 export function OrderDetailCard({ orderId, onClose }: { orderId: string; onClose: () => void }) {

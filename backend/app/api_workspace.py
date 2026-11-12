@@ -10,7 +10,6 @@
 """
 
 import logging
-import time
 from datetime import date, timedelta
 
 from fastapi import APIRouter
@@ -23,11 +22,34 @@ logger = logging.getLogger("shop-copilot.workspace")
 router = APIRouter()
 
 
-def _calc_trend(today: float, yesterday: float) -> float:
-    """计算环比趋势百分比（今日 vs 昨日）。昨日为 0 时返回 0。"""
+def _calc_trend(today: float, yesterday: float) -> float | None:
+    """计算环比趋势百分比（今日 vs 昨日）。
+
+    昨日为 0 时没有可比基准，算不出环比——返回 None 让前端隐藏，
+    而不是谎报「0% 没变」（那是把“无数据”当“无变化”）。
+    """
     if yesterday == 0:
-        return 0.0
+        return None
     return round((today - yesterday) / abs(yesterday) * 100, 1)
+
+
+def _anchor_date(keys) -> date:
+    """返回数据里最新的合法日期。
+
+    种子数据是固定的（不随系统时间滚动），而 `date.today()` 会一直往前走，
+    两者脱节会让「近 30 天」窗口整体滑出数据范围、图变成全零。
+    所以所有按天聚合的口径都锚到数据自身的最新日，而不是墙上时钟。
+    全都解析失败时才退回今天。
+    """
+    newest: date | None = None
+    for key in keys:
+        try:
+            candidate = date.fromisoformat(str(key)[:10])
+        except ValueError:
+            continue
+        if newest is None or candidate > newest:
+            newest = candidate
+    return newest or date.today()
 
 
 def _daily_metrics(orders: list[dict]) -> dict[str, dict[str, float]]:
@@ -132,12 +154,18 @@ ORDER_STATUSES: tuple[str, ...] = (
 
 
 def _daily_trend(orders: list[dict], days: int = 30) -> list[dict]:
-    """最近 N 天 GMV/订单数趋势：按 created_at 日期聚合，缺失日期补零，日期升序。"""
+    """最近 N 天 GMV/订单数趋势：按 created_at 日期聚合，缺失日期补零，日期升序。
+
+    窗口右端锚数据最新日（见 `_anchor_date`），不锚 `date.today()`——
+    否则种子数据固定、真实时间一直往前，窗口会整体滑到数据之外，图全零。
+    """
     daily = _daily_metrics(orders)
-    today = date.today()
+    if not daily:
+        return []
+    end = _anchor_date(daily.keys())
     trend: list[dict] = []
     for i in range(days - 1, -1, -1):
-        ds = (today - timedelta(days=i)).isoformat()
+        ds = (end - timedelta(days=i)).isoformat()
         m = daily.get(ds, {"gmv": 0.0, "orders": 0})
         trend.append({"date": ds, "gmv": m["gmv"], "orders": m["orders"]})
     return trend
@@ -192,26 +220,19 @@ async def get_workspace_summary() -> dict:
         orders = provider.get_orders(None) or []
         aftersales = provider.get_aftersales(None) or []
 
-        # KPI：今日 vs 昨日环比
+        # KPI：今日 vs 昨日环比。
+        # 「今日」锚到数据最新日，和 30 天趋势图用同一个锚点——否则种子数据停在
+        # 历史日期、真实时钟一直往前走，卡片会和旁边趋势图互相打架。
         daily = _daily_metrics(orders)
-        today_str = time.strftime("%Y-%m-%d")
-        yest_str = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
+        anchor = _anchor_date(daily.keys())
+        today_str = anchor.isoformat()
+        yest_str = (anchor - timedelta(days=1)).isoformat()
 
-        today_d = daily.get(today_str, {"gmv": 0, "orders": 0, "refunds": 0})
-        yest_d = daily.get(yest_str, {"gmv": 0, "orders": 0, "refunds": 0})
+        today_d = daily.get(today_str, {"gmv": 0.0, "orders": 0, "refunds": 0})
+        yest_d = daily.get(yest_str, {"gmv": 0.0, "orders": 0, "refunds": 0})
 
-        # 如果今日数据为空（种子库可能没有今天的单），用近 7 天均值兜底
-        if today_d["orders"] == 0:
-            recent = sorted(daily.keys())[-7:] if daily else []
-            if recent:
-                avg_gmv = sum(daily[d]["gmv"] for d in recent) / len(recent)
-                avg_orders = sum(daily[d]["orders"] for d in recent) / len(recent)
-                today_d = {
-                    "gmv": round(avg_gmv, 1),
-                    "orders": round(avg_orders),
-                    "refunds": sum(daily[d]["refunds"] for d in recent) / len(recent),
-                }
-
+        # 转化率只有当前快照、没有历史口径，算不出真实环比，所以不给 conversion_trend：
+        # 让它缺键，MetricCard 收到 undefined 就整行隐藏，而不是编一个恒定值。
         kpis = {
             "gmv": today_d["gmv"],
             "gmv_trend": _calc_trend(today_d["gmv"], yest_d["gmv"]),
@@ -223,11 +244,9 @@ async def get_workspace_summary() -> dict:
                 round(yest_d["refunds"] / max(yest_d["orders"], 1) * 100, 2),
             ),
             "conversion": snap_data.get("conversion_rate", 0),
-            "conversion_trend": _calc_trend(
-                snap_data.get("conversion_rate", 0),
-                snap_data.get("conversion_rate", 0) * 0.97,
-            ),
         }
+        # 环比没有基准（昨日无数据）时剔除该键：把「无数据」说成「0% 没变」是撒谎
+        kpis = {k: v for k, v in kpis.items() if v is not None}
 
         # 待处理事项：退款中 + 被拒的售后单（补关联订单的买家与商品，前端直接展示）
         orders_by_id = _order_index(orders)
@@ -308,13 +327,9 @@ async def get_workspace_summary() -> dict:
         return {
             "kpis": {
                 "gmv": 0,
-                "gmv_trend": 0,
                 "orders": 0,
-                "orders_trend": 0,
                 "refund_rate": 0,
-                "refund_rate_trend": 0,
                 "conversion": 0,
-                "conversion_trend": 0,
             },
             "pending": [],
             "recent_sessions": [],

@@ -18,6 +18,7 @@
 import type { UIMessage } from 'ai';
 import type { AgentStep } from '@/components/AgentSteps';
 import type { IntentInfo } from './intentClient';
+import type { ThoughtStep } from './agentClient';
 import { parseProblem, problemMessage } from './errors';
 
 export type SessionMode = 'rag' | 'agent';
@@ -45,6 +46,10 @@ export interface AgentMessage {
   role: 'user' | 'assistant';
   content: string;
   steps?: AgentStep[];
+  /** 多 Agent 处理过程思考链（router→specialist→review）；老会话无此字段 */
+  thoughtChain?: ThoughtStep[];
+  /** 知识库命中（[n] 引用溯源 → CitationCard）；老会话无此字段 */
+  kbHits?: Array<{ title: string; category: string; text: string }>;
   /** 意图识别结果（P5 §2.2，仅 user 消息）；老会话无此字段 → 不渲染 chip */
   intent?: IntentInfo;
 }

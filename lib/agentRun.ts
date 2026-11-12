@@ -6,11 +6,14 @@
  */
 
 import { streamAgent } from './agentClient';
+import type { ThoughtStep } from './agentClient';
 import type { AgentStep } from '@/components/AgentSteps';
 
 export interface AgentRunState {
   text: string;
   steps: AgentStep[];
+  thoughtChain: ThoughtStep[];
+  kbHits: Array<{ title: string; category: string; text: string }>;
 }
 
 /**
@@ -30,6 +33,8 @@ export async function runAgentStream(
 ): Promise<void> {
   let text = '';
   let steps: AgentStep[] = [];
+  let thoughtChain: ThoughtStep[] = [];
+  let kbHits: Array<{ title: string; category: string; text: string }> = [];
   let counter = 0;
   // 记录每个步骤的开始时刻，step_result 到达时算出耗时
   const stepStartedAt = new Map<string, number>();
@@ -40,7 +45,7 @@ export async function runAgentStream(
         const id = `step-${counter++}`;
         stepStartedAt.set(id, Date.now());
         steps = [...steps, { id, tool: evt.tool, args: evt.args, done: false }];
-        onUpdate({ text, steps });
+        onUpdate({ text, steps, thoughtChain, kbHits });
       } else if (evt.type === 'step_result') {
         const next = [...steps];
         for (let i = next.length - 1; i >= 0; i--) {
@@ -56,15 +61,21 @@ export async function runAgentStream(
           }
         }
         steps = next;
-        onUpdate({ text, steps });
+        onUpdate({ text, steps, thoughtChain, kbHits });
       } else if (evt.type === 'delta') {
         text += evt.text;
-        onUpdate({ text, steps });
+        onUpdate({ text, steps, thoughtChain, kbHits });
       } else if (evt.type === 'error') {
         onError(evt.message);
         break;
       }
-      if (evt.type === 'done') break;
+      if (evt.type === 'done') {
+        // 后端随 done 下发完整思考链 + 知识库命中（[n] 引用溯源用）
+        thoughtChain = evt.thought_chain ?? [];
+        kbHits = evt.kb_hits ?? [];
+        onUpdate({ text, steps, thoughtChain, kbHits });
+        break;
+      }
     }
   } catch (err) {
     // 用户主动停止不作为错误

@@ -28,9 +28,20 @@ export interface AgentDeltaEvent {
   text: string;
 }
 
+export interface ThoughtStep {
+  agent: string;
+  status?: string;
+  input?: string;
+  output?: string;
+  detail?: string;
+}
+
 export interface AgentDoneEvent {
   type: 'done';
   citations: Array<{ title?: string; category?: string }>;
+  thought_chain?: ThoughtStep[];
+  /** 知识库命中（供 [n] 引用溯源 → CitationCard） */
+  kb_hits?: Array<{ title: string; category: string; text: string }>;
 }
 
 export interface AgentErrorEvent {

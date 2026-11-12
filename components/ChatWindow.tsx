@@ -1,10 +1,9 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { AgentSteps } from './AgentSteps';
+import { ThoughtChain } from './ThoughtChain';
 import { Sidebar } from './Sidebar';
 import { ScenarioCards } from './ScenarioCards';
 import { Button } from './ui/Button';
@@ -18,12 +17,7 @@ import { runAgentStream } from '@/lib/agentRun';
 import { requestEscalation, type EscalationData } from '@/lib/escalateClient';
 import { useSessions, DEFAULT_TITLE } from '@/lib/useSessions';
 import { ragSearch, type AgentMessage, type CitationSource } from '@/lib/sessionsClient';
-import {
-  fetchIntent,
-  shouldAutoSwitch,
-  type IntentInfo,
-  type IntentUIMessage,
-} from '@/lib/intentClient';
+import { fetchIntent, type IntentInfo } from '@/lib/intentClient';
 import { parseProblem, problemMessage } from '@/lib/errors';
 
 /** SpeechRecognition 最小接口（浏览器 API 无官方 TS 类型） */
@@ -37,58 +31,15 @@ interface SpeechRecognitionLike {
   stop: () => void;
 }
 
-/** UIMessage → 纯文本（只取 text part） */
-function uiText(m: UIMessage): string {
-  return (m.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
-}
-
 /**
- * 会话库里的历史消息可能只有 { role, content }；
- * AI SDK v7 的 useChat/UI 渲染需要 parts，这里统一补齐。
- */
-function toUIMessages(raw: unknown[]): UIMessage[] {
-  const messages: UIMessage[] = [];
-
-  for (const item of raw) {
-    if (typeof item !== 'object' || item === null) continue;
-    const message = item as {
-      id?: unknown;
-      role?: unknown;
-      content?: unknown;
-      parts?: unknown;
-    };
-    if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'system') {
-      continue;
-    }
-
-    const parts: UIMessage['parts'] = Array.isArray(message.parts)
-      ? (message.parts as UIMessage['parts'])
-      : typeof message.content === 'string'
-        ? [{ type: 'text', text: message.content }]
-        : [];
-    if (parts.length === 0) continue;
-
-    messages.push({
-      id: typeof message.id === 'string' ? message.id : crypto.randomUUID(),
-      role: message.role,
-      parts,
-    });
-  }
-
-  return messages;
-}
-
-/**
- * 聊天主窗口（客户端组件）
+ * 聊天主窗口（客户视角，多 Agent 客服）
  *
- * 双模式 + 会话持久化（P4）：
- * - RAG 问答：useChat + /api/chat（流式，FastAPI 注入 RAG 上下文）
- * - Agent 模式：runAgentStream + /api/agent（ReAct 循环，步骤卡片）
+ * - 多 Agent：runAgentStream + /api/agent（LangGraph 编排，Router→Specialist→Review）
  * - 会话：useSessions 状态机（列表/切换/改名/删除/debounce 保存）
+ * - 思考链：ThoughtChain 面板展示 router→specialist→review 每步留痕
  * - 引用：[n] 角标点击 → ragSearch（同序来源）→ CitationCard 溯源
- * - 意图分流（P5 §2.2）：发送时与回答并行识别意图 → 气泡上方 chip；
- *   RAG 模式遇 data/policy/copywriting 自动切 Agent，Agent 模式永不回切
- * - 处理方案生成（运营助手）：汇总上下文 → /api/v1/escalate → 摘要/建议/话术卡片（后端未就绪 mock 兜底）
+ * - 意图分流：发送时并行识别意图 → 气泡上方 chip
+ * - 处理方案生成：汇总上下文 → /api/v1/escalate → 摘要/建议/话术卡片
  */
 export function ChatWindow() {
   const [input, setInput] = useState('');
@@ -102,14 +53,7 @@ export function ChatWindow() {
     stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }
 
-  // ── RAG 模式（useChat）──
-  const transport = useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
-  const { messages, sendMessage, status, error, stop, regenerate, setMessages } = useChat({
-    transport,
-  });
-  const ragBusy = status === 'submitted' || status === 'streaming';
-
-  // ── Agent 模式（手写状态机）──
+  // ── Agent 模式 ──
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
   const [agentStreaming, setAgentStreaming] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
@@ -119,29 +63,21 @@ export function ChatWindow() {
   const [dismissedOrder, setDismissedOrder] = useState<string | null>(null);
   const [refundOrder, setRefundOrder] = useState<{ order_id: string; product: string; buyer: string; amount: number; status: string; date: string } | null>(null);
   const rawDetectedOrder = useMemo(() => {
-    const allText = [
-      ...messages.map((m) => uiText(m)),
-      ...agentMessages.map((m) => (typeof m.content === "string" ? m.content : "")),
-    ].join(" ");
+    const allText = agentMessages
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .join(" ");
     return allText.match(/SO\d{11}/)?.[0] ?? null;
-  }, [messages, agentMessages]);
+  }, [agentMessages]);
   const detectedOrder = rawDetectedOrder !== dismissedOrder ? rawDetectedOrder : null;
 
-  // ── 会话状态机（P4）──
+  // ── 会话状态机 ──
   const sessions = useSessions({
-    getPayload: (m) => (m === 'rag' ? messages : agentMessages),
+    getPayload: () => agentMessages,
     onSessionLoaded: (sess) => {
       stickRef.current = true;
-      if (sess.mode === 'rag') {
-        setMessages(toUIMessages(sess.messages));
-        setAgentMessages([]);
-      } else {
-        setAgentMessages(sess.messages as AgentMessage[]);
-        setMessages([]);
-      }
+      setAgentMessages(sess.messages as AgentMessage[]);
     },
     onSessionClosed: () => {
-      setMessages([]);
       setAgentMessages([]);
     },
   });
@@ -163,7 +99,7 @@ export function ChatWindow() {
   // 消息变化 → debounce 保存（hook 内部 1.5s + 签名守卫）
   useEffect(() => {
     notifyChanged();
-  }, [messages, agentMessages, notifyChanged]);
+  }, [agentMessages, notifyChanged]);
 
   // ── 预填查询（从工作台/数据页跳转时，一次性）──
   const prefillDone = useRef(false);
@@ -193,7 +129,7 @@ export function ChatWindow() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, agentMessages, status, agentStreaming, escalation]);
+  }, [agentMessages, agentStreaming, escalation]);
   // ── 引用溯源（P4）：按「本轮 user 消息」懒加载 ragSearch，会话内缓存 ──
   const [citation, setCitation] = useState<{ n: number; sources: CitationSource[] | null } | null>(
     null,
@@ -202,18 +138,24 @@ export function ChatWindow() {
   const citeCacheRef = useRef(new Map<string, CitationSource[]>());
 
   function lastUserText(): string | null {
-    const payload: Array<UIMessage | AgentMessage> = mode === 'rag' ? messages : agentMessages;
-    for (let i = payload.length - 1; i >= 0; i--) {
-      const m = payload[i];
+    for (let i = agentMessages.length - 1; i >= 0; i--) {
+      const m = agentMessages[i];
       if (m.role !== 'user') continue;
-      const text = 'parts' in m ? uiText(m) : m.content;
-      const trimmed = text.trim();
+      const trimmed = m.content.trim();
       return trimmed || null;
     }
     return null;
   }
 
   async function handleCite(n: number) {
+    // 优先使用当前消息存储的知识库命中（agent 路径 [n] 引用溯源）
+    const lastMsg = agentMessages[agentMessages.length - 1];
+    if (lastMsg?.kbHits && lastMsg.kbHits.length > 0) {
+      setCitation({ n, sources: lastMsg.kbHits });
+      return;
+    }
+
+    // 回退：调用 ragSearch（兼容旧 RAG 路径 / 无 kbHits 时）
     const q = lastUserText();
     if (!q) return;
     const cached = citeCacheRef.current.get(q);
@@ -247,7 +189,7 @@ export function ChatWindow() {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const generating = mode === 'rag' ? ragBusy : agentStreaming;
+  const generating = agentStreaming;
   const busy = generating || visionLoading || sessions.busy;
 
   // ── Agent 单轮执行（handleSubmit / regenerateAgent 共用）──
@@ -256,7 +198,7 @@ export function ChatWindow() {
     setAgentStreaming(true);
     const abort = new AbortController();
     abortRef.current = abort;
-    setAgentMessages((prev) => [...prev, { role: 'assistant', content: '', steps: [] }]);
+    setAgentMessages((prev) => [...prev, { role: 'assistant', content: '', steps: [], thoughtChain: [], kbHits: [] }]);
     try {
       await runAgentStream(
         text,
@@ -270,6 +212,8 @@ export function ChatWindow() {
               role: 'assistant',
               content: st.text,
               steps: st.steps,
+              thoughtChain: st.thoughtChain,
+              kbHits: st.kbHits,
             };
             return next;
           }),
@@ -295,23 +239,7 @@ export function ChatWindow() {
     void runAgentTurn(lastUser.content, history);
   }
 
-  // ── 意图分流（P5 §2.2）：chip 回填 + RAG→Agent 非对称自动路由 ──
-
-  /** 把意图结果回填到本轮 user 消息（按文本从尾部匹配，跳过已带 intent 的历史消息） */
-  function attachIntentToLastUser(text: string, intent: IntentInfo): void {
-    setMessages((prev) => {
-      for (let i = prev.length - 1; i >= 0; i--) {
-        const m = prev[i];
-        if (m.role !== 'user' || uiText(m) !== text) continue;
-        if ((m as IntentUIMessage).intent) continue;
-        const next = [...prev];
-        const updated: IntentUIMessage = { ...m, intent };
-        next[i] = updated;
-        return next;
-      }
-      return prev;
-    });
-  }
+  // ── 意图回填（chip）──
 
   /** Agent 模式：意图只挂 chip，永不回切（§2.2 路由表第三行） */
   function attachAgentIntent(text: string, intent: IntentInfo): void {
@@ -327,61 +255,15 @@ export function ChatWindow() {
     });
   }
 
-  /**
-   * RAG → Agent 自动路由（§2.2 路由表第一行）：
-   * 中止并行中的 RAG 流 → 已有消息迁成 Agent 队列 → 原地 PATCH mode → 走 agent 端点重答本轮。
-   * RAG 队列不清空：Agent 模式下既不渲染也不保存它（装载/切模式时由 onSessionLoaded 覆盖）。
-   */
-  async function routeToAgent(text: string, intent: IntentInfo, prior: UIMessage[]): Promise<void> {
-    void stop().catch(() => undefined);
-    // 自动切换时若尚无会话，直接建 Agent 模式会话（避免 toggleMode 的"有内容建新会话"路径）
-    if (sessions.activeId === null) {
-      await sessions.newSession('agent');
-    }
-    const converted: AgentMessage[] = [];
-    for (const m of prior) {
-      const content = uiText(m);
-      if (!content.trim()) continue;
-      converted.push({ role: m.role === 'user' ? 'user' : 'assistant', content });
-    }
-    const history = converted.map((m) => ({ role: m.role, content: m.content }));
-    setAgentMessages([
-      ...converted,
-      { role: 'user', content: text, intent: { ...intent, switched: true } },
-    ]);
-    setMessages([]); // 清空 RAG 队列，避免 debounce 保存时双队列冲突
-    void sessions.switchModeInPlace('agent');
-    await runAgentTurn(text, history);
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
     if (!text || busy) return;
     setInput('');
 
-    // §2.2：意图识别与回答并行发起
+    // 意图识别与回答并行发起
     const intentP = fetchIntent(text);
 
-    if (mode === 'rag') {
-      const prior = messages;
-      // 先检查意图，自动切换时不建 RAG 会话（由 routeToAgent 建 Agent 会话）
-      const intent = await intentP;
-      if (intent && shouldAutoSwitch(intent.intent)) {
-        await routeToAgent(text, intent, prior);
-        return;
-      }
-      // knowledge/general → 留在 RAG，建会话 + 发消息
-      if (sessions.activeId === null) {
-        await sessions.newSession();
-      }
-      const sendP = sendMessage({ text });
-      if (intent) attachIntentToLastUser(text, intent);
-      await sendP;
-      return;
-    }
-
-    // Agent 模式：建会话 + 发消息
     if (sessions.activeId === null) {
       await sessions.newSession('agent');
     }
@@ -401,11 +283,7 @@ export function ChatWindow() {
   }
 
   function handleStop() {
-    if (mode === 'agent') {
-      abortRef.current?.abort();
-    } else {
-      stop();
-    }
+    abortRef.current?.abort();
   }
 
   // ── 语音输入（Web Speech API）──
@@ -476,28 +354,22 @@ export function ChatWindow() {
   }
 
   // ── 错误展示（三来源合并）──
-  const displayError = agentError || error?.message || sessions.error;
+  const displayError = agentError || sessions.error;
   function retryError() {
     if (agentError) {
       setAgentError(null);
       return;
     }
-    if (error) {
-      if (mode === 'rag') void regenerate();
-      return;
-    }
     sessions.clearError();
   }
 
-  // ── 处理方案生成（运营助手）：状态见上，此处为收集与提交逻辑 ──
-  /** 当前模式的消息拍平为 {role, content}（与 routeToAgent 转换口径一致） */
+  // ── 处理方案生成：收集当前会话消息 ──
+  /** 会话消息拍平为 {role, content}（供 escalate 用） */
   function collectTranscript(): Array<{ role: 'user' | 'assistant'; content: string }> {
-    const payload: Array<UIMessage | AgentMessage> = mode === 'rag' ? messages : agentMessages;
     const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-    for (const m of payload) {
-      const content = 'parts' in m ? uiText(m) : m.content;
-      if (!content.trim()) continue;
-      out.push({ role: m.role === 'user' ? 'user' : 'assistant', content });
+    for (const m of agentMessages) {
+      if (!m.content.trim()) continue;
+      out.push({ role: m.role, content: m.content });
     }
     return out;
   }
@@ -519,7 +391,7 @@ export function ChatWindow() {
     }
   }
 
-  const conversationEmpty = mode === 'rag' ? messages.length === 0 : agentMessages.length === 0;
+  const conversationEmpty = agentMessages.length === 0;
 
   return (
     <div className="flex h-full w-full overflow-hidden">
@@ -551,28 +423,9 @@ export function ChatWindow() {
             <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <h1 className="truncate text-sm font-semibold text-ink">{headerTitle}</h1>
-                <p className="mt-0.5 truncate text-xs text-ink-subtle">中小电商运营者的 AI 工作台</p>
+                <p className="mt-0.5 truncate text-xs text-ink-subtle">电商智能客服</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {/* 模式切换（空会话原地切，有内容自动新建） */}
-                <div className="inline-flex items-center gap-1 rounded-control border border-line bg-surface-muted p-1">
-                  <Button
-                    variant={mode === 'rag' ? 'primary' : 'ghost'}
-                    size="sm"
-                    onClick={() => void sessions.toggleMode('rag')}
-                    disabled={busy}
-                  >
-                    RAG 问答
-                  </Button>
-                  <Button
-                    variant={mode === 'agent' ? 'primary' : 'ghost'}
-                    size="sm"
-                    onClick={() => void sessions.toggleMode('agent')}
-                    disabled={busy}
-                  >
-                    Agent 模式
-                  </Button>
-                </div>
                 {/* 新建会话 */}
                 <Button
                   variant="secondary"
@@ -615,47 +468,25 @@ export function ChatWindow() {
                     <p className="text-xs font-semibold tracking-[0.18em] text-brand-600">
                       店智 Copilot
                     </p>
-                    <h2 className="text-xl font-semibold text-ink">中小电商运营者的 AI 工作台</h2>
+                    <h2 className="text-xl font-semibold text-ink">电商智能客服</h2>
                     <p className="text-sm text-ink-muted">
-                      看数据、查问题、处理售后、写文案，一个对话框全搞定。
+                      售前查商品推荐、售后查订单退款，一个对话框全搞定。
                     </p>
                   </div>
                   <ScenarioCards onSelect={setInput} />
                   <p className="text-xs text-ink-subtle">点击卡片预填，Enter 发送</p>
                 </div>
               )}
-              {/* RAG 模式 */}
-              {mode === 'rag' && (
-                <>
-                  {messages.map((m, i) => (
-                    <MessageBubble
-                      key={m.id}
-                      role={m.role === 'user' ? 'user' : 'assistant'}
-                      text={uiText(m)}
-                      isLast={i === messages.length - 1}
-                      busy={generating}
-                      onCite={(n) => void handleCite(n)}
-                      onRegenerate={() => void regenerate()}
-                      intent={(m as IntentUIMessage).intent}
-                      mode={mode}
-                    />
-                  ))}
-                  {status === 'submitted' && (
-                    <div className="flex items-center gap-2 text-sm text-ink-subtle">
-                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-subtle" />
-                      店智思考中…
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Agent 模式 */}
+              {/* 消息列表 */}
               {mode === 'agent' && (
                 <>
                   {agentMessages.map((m, i) => (
                     <div key={i} className="space-y-2">
                       {m.steps && m.steps.length > 0 && (
                         <AgentSteps steps={m.steps} onOrderAction={setRefundOrder} />
+                      )}
+                      {m.thoughtChain && m.thoughtChain.length > 0 && (
+                        <ThoughtChain steps={m.thoughtChain} />
                       )}
                       <MessageBubble
                         role={m.role}
@@ -698,7 +529,7 @@ export function ChatWindow() {
                   onClick={retryError}
                   className="mt-2 px-0 text-danger hover:bg-transparent hover:text-red-700"
                 >
-                  {agentError || error ? '重试' : '知道了'}
+                        {agentError || sessions.error ? '重试' : '知道了'}
                 </Button>
               </div>
             </div>
@@ -773,11 +604,7 @@ export function ChatWindow() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={
-                    mode === 'rag'
-                      ? '输入你的电商运营问题，Enter 发送…'
-                      : '描述任务（如：查店铺数据并给建议），Enter 发送…'
-                  }
+                  placeholder="描述问题（如：查订单、问商品、办退款），Enter 发送…"
                   rows={2}
                   className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-subtle"
                 />
@@ -792,9 +619,7 @@ export function ChatWindow() {
                 )}
               </div>
               <p className="mt-2 text-xs text-ink-subtle">
-                {mode === 'rag'
-                  ? 'RAG 模式：知识库增强问答，回答带 [1][2] 角标，点击可查来源'
-                  : 'Agent 模式：自动调用工具（数据/知识库/文案/合规），可多步推理'}
+                售前查商品推荐、售后查订单退款——自动判断，有据可查
               </p>
             </div>
           </form>

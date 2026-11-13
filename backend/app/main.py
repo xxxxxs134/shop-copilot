@@ -317,10 +317,12 @@ async def agent_chat(request: Request):
         raise input_error("message 不能为空")
 
     history = body.get("history") or []
+    # Checkpointer 多轮记忆：同 thread_id 跨轮共享图状态（退款 HITL 基础）
+    thread_id = body.get("thread_id") or "default"
 
     async def event_stream():
         try:
-            final, thought_chain, kb_hits = await run_customer_agent(history, user_text)
+            final, thought_chain, kb_hits = await run_customer_agent(history, user_text, thread_id)
             # 简易流式：按字符块发 delta（前端 agentRun 兼容）；思考链 + 知识库命中随 done 下发
             chunk_size = 8
             for i in range(0, len(final), chunk_size):

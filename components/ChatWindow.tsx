@@ -219,6 +219,7 @@ export function ChatWindow() {
           }),
         (msg) => setAgentError(msg),
         abort.signal,
+        sessions.activeId ?? undefined,
       );
     } finally {
       setAgentStreaming(false);

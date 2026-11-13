@@ -21,10 +21,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import operator
 from datetime import datetime
-from typing import Annotated, Any, TypedDict
+from typing import Any, TypedDict
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from . import router as router_mod
@@ -47,7 +47,7 @@ class AgentState(TypedDict):
     evidence: list[dict]   # 工具证据（传给终审，防幻觉）
     kb_hits: list[dict]    # 知识库命中（供 [n] 引用溯源）
     escalation_ticket: dict | None   # 投诉工单
-    thought_chain: Annotated[list[dict], operator.add]  # 思考链（append 语义）
+    thought_chain: list[dict]  # 思考链（节点显式累积，不用 reducer——Checkpointer 跨轮不串）
     final: str             # 终审回复（前端取这个）
 
 
@@ -114,7 +114,7 @@ async def clarify_node(state: AgentState) -> dict:
     final = question or "请问您是想咨询商品，还是查询已有订单呢？"
     return {
         "final": final,
-        "thought_chain": [_thought("clarify", "", final, "意图不明，追问澄清")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("clarify", "", final, "意图不明，追问澄清")],
     }
 
 
@@ -164,7 +164,7 @@ async def presales_node(state: AgentState) -> dict:
         "draft": text,
         "evidence": evidence,
         "kb_hits": kb_hits,
-        "thought_chain": [_thought("presales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("presales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
     }
 
 
@@ -174,7 +174,7 @@ async def aftersales_node(state: AgentState) -> dict:
         "draft": text,
         "evidence": evidence,
         "kb_hits": kb_hits,
-        "thought_chain": [_thought("aftersales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("aftersales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
     }
 
 
@@ -195,7 +195,7 @@ async def escalation_node(state: AgentState) -> dict:
     }
     return {
         "escalation_ticket": ticket,
-        "thought_chain": [_thought(
+        "thought_chain": [*state.get("thought_chain", []), _thought(
             "escalation",
             state["messages"][-1].get("content", ""),
             f"已生成工单 {ticket['ticket_id']}",
@@ -205,7 +205,12 @@ async def escalation_node(state: AgentState) -> dict:
 
 
 async def review_node(state: AgentState) -> dict:
-    """终审：过滤无证据内容 + 统一语气；有工单则告知已转人工。"""
+    """终审：过滤无证据内容 + 统一语气；有工单则告知已转人工。
+
+    幻觉防御（硬保证，不靠 LLM 自觉）：
+    - 无工具证据 + 无知识库命中 → 强制拒答
+    - 有知识库命中但答案无 [n] → 记警告日志
+    """
     ticket = state.get("escalation_ticket")
     if ticket:
         msgs = [
@@ -213,26 +218,46 @@ async def review_node(state: AgentState) -> dict:
             {"role": "user", "content": f"工单号:{ticket['ticket_id']} 问题类别:{ticket['issue_category']} 紧急度:{ticket['urgency']} 客户原话:{state['messages'][-1].get('content','')}"},
         ]
         final = await chat_text(msgs, temperature=0.2)
-    else:
-        evidence_block = "\n".join(
-            f"- [{e['tool']}] {e['result']}" for e in state.get("evidence", [])
-        ) or "（无工具证据）"
-        kb_hits = state.get("kb_hits", [])
-        kb_block = ""
-        if kb_hits:
-            lines = []
-            for i, h in enumerate(kb_hits, 1):
-                lines.append(f"[{i}] {h.get('title','')}（{h.get('category','')}）：{h.get('text','')}")
-            kb_block = "\n\n知识库证据（回答时用 [n] 角标引用）：\n" + "\n".join(lines)
-        msgs = [
-            {"role": "system", "content": REVIEW_SYSTEM},
-            {"role": "user", "content": f"客服草稿：\n{state.get('draft', '')}\n\n工具证据：\n{evidence_block}{kb_block}"},
-        ]
-        final = await chat_text(msgs, temperature=0.2)
+        final = (final or "您的问题已受理，我们会尽快处理。").strip()
+        return {
+            "final": final,
+            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:80], "终审完成（工单）")],
+        }
+
+    evidence = state.get("evidence", [])
+    kb_hits = state.get("kb_hits", [])
+
+    # 硬校验①：specialist 一个工具都没调 → 它在凭模型知识编造，强制拒答
+    if not evidence and not kb_hits:
+        final = "抱歉，这个问题我暂时没有查到确切信息，建议您联系人工客服进一步确认。"
+        return {
+            "final": final,
+            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:80], "无工具证据，拒答")],
+        }
+
+    evidence_block = "\n".join(
+        f"- [{e['tool']}] {e['result']}" for e in evidence
+    ) or "（无工具证据）"
+    kb_block = ""
+    if kb_hits:
+        lines = []
+        for i, h in enumerate(kb_hits, 1):
+            lines.append(f"[{i}] {h.get('title','')}（{h.get('category','')}）：{h.get('text','')}")
+        kb_block = "\n\n知识库证据（回答时用 [n] 角标引用）：\n" + "\n".join(lines)
+    msgs = [
+        {"role": "system", "content": REVIEW_SYSTEM},
+        {"role": "user", "content": f"客服草稿：\n{state.get('draft', '')}\n\n工具证据：\n{evidence_block}{kb_block}"},
+    ]
+    final = await chat_text(msgs, temperature=0.2)
+
+    # 硬校验②：有知识库命中但答案没有 [n] → 记警告（引用强制的可观测性）
+    if kb_hits and "[" not in final:
+        logger.warning("答案缺少 [n] 引用（有 %d 条知识库命中）: %s", len(kb_hits), final[:80])
+
     final = (final or state.get("draft") or "抱歉，我暂时无法回答，请稍后再试。").strip()
     return {
         "final": final,
-        "thought_chain": [_thought("review", (state.get("draft") or "")[:80], final[:80], "终审完成")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("review", (state.get("draft") or "")[:80], final[:80], "终审完成")],
     }
 
 
@@ -265,15 +290,21 @@ def build_graph():
     builder.add_edge("escalation", "review")
     builder.add_edge("clarify", END)
     builder.add_edge("review", END)
-    return builder.compile()
+    return builder.compile(checkpointer=MemorySaver())
 
 
 _graph = build_graph()
 
 
-async def run_customer_agent(history: list[dict], user_text: str) -> tuple[str, list[dict], list[dict]]:
-    """对外入口：跑图，返回 (最终回复, 思考链, 知识库命中)。"""
+async def run_customer_agent(history: list[dict], user_text: str, thread_id: str = "default") -> tuple[str, list[dict], list[dict]]:
+    """对外入口：跑图，返回 (最终回复, 思考链, 知识库命中)。
+
+    thread_id 用于 Checkpointer 多轮状态持久化（记忆系统基础）。
+    同一 thread_id 跨轮次共享图状态，支持未来 interrupt()/resume（退款 HITL）。
+    """
+    config = {"configurable": {"thread_id": thread_id}}
     result = await _graph.ainvoke(
         {"messages": [*history, {"role": "user", "content": user_text}]},
+        config=config,
     )
     return result.get("final", ""), result.get("thought_chain", []), result.get("kb_hits", [])

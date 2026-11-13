@@ -30,6 +30,7 @@ export async function runAgentStream(
   onUpdate: (state: AgentRunState) => void,
   onError: (message: string) => void,
   signal: AbortSignal,
+  threadId?: string,
 ): Promise<void> {
   let text = '';
   let steps: AgentStep[] = [];
@@ -40,7 +41,7 @@ export async function runAgentStream(
   const stepStartedAt = new Map<string, number>();
 
   try {
-    for await (const evt of streamAgent(message, history, signal)) {
+    for await (const evt of streamAgent(message, history, signal, threadId)) {
       if (evt.type === 'step') {
         const id = `step-${counter++}`;
         stepStartedAt.set(id, Date.now());

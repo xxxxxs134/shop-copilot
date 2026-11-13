@@ -67,11 +67,12 @@ export async function* streamAgent(
   message: string,
   history: Array<{ role: string; content: string }> = [],
   signal?: AbortSignal,
+  threadId?: string,
 ): AsyncGenerator<AgentEvent> {
   const res = await fetch('/api/agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, thread_id: threadId }),
     signal,
   });
 

@@ -75,7 +75,30 @@ export function ChatWindow() {
     getPayload: () => agentMessages,
     onSessionLoaded: (sess) => {
       stickRef.current = true;
-      setAgentMessages(sess.messages as AgentMessage[]);
+      // 旧 RAG 会话消息是 UIMessage(parts) 格式，抽纯文本转 AgentMessage，避免装载后白屏
+      const normalized: AgentMessage[] = sess.messages.map((raw) => {
+        const m = raw as Record<string, unknown>;
+        const content =
+          typeof m.content === 'string'
+            ? m.content
+            : Array.isArray(m.parts)
+              ? m.parts
+                  .map((p) =>
+                    (p as { type?: string }).type === 'text'
+                      ? String((p as { text?: string }).text ?? '')
+                      : '',
+                  )
+                  .join('')
+              : '';
+        return {
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content,
+          ...(typeof m.intent === 'object' && m.intent !== null
+            ? { intent: m.intent as AgentMessage['intent'] }
+            : {}),
+        };
+      });
+      setAgentMessages(normalized);
     },
     onSessionClosed: () => {
       setAgentMessages([]);

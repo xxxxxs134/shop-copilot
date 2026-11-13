@@ -153,7 +153,8 @@ async def _run_react(messages: list[dict], tools: list[Any], system: str) -> tup
                         pass
             else:
                 result = json.dumps({"error": f"未知工具: {name}"}, ensure_ascii=False)
-            evidence.append({"tool": name, "args": args, "result": result[:200]})
+            # 600 字：终审要看全关键数字（退款回执/库存/运单），200 会截断
+            evidence.append({"tool": name, "args": args, "result": result[:600]})
             msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": result})
     return "", evidence, kb_hits
 

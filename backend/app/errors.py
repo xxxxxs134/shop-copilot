@@ -76,19 +76,25 @@ def upstream_error(
     detail: str | None = None,
     retry_after_ms: int | None = None,
 ) -> ProblemException:
-    """可重试：上游模型服务（网络/超时/429/5xx）。"""
-    if status == 429:
-        title, default_detail = "请求过于频繁", "请求过于频繁，请稍后重试"
+    """上游模型错误；retryable 只对瞬时故障为真——401/403 重试也不会变好。"""
+    if status in (401, 403):
+        title, default_detail, retryable = (
+            "AI 服务认证失败",
+            "AI 服务认证失败，请联系管理员检查配置",
+            False,
+        )
+    elif status == 429:
+        title, default_detail, retryable = "请求过于频繁", "请求过于频繁，请稍后重试", True
     elif status in _RETRYABLE_STATUS:
-        title, default_detail = "AI 服务暂时繁忙", "AI 服务暂时不可用，请稍后重试"
+        title, default_detail, retryable = "AI 服务暂时繁忙", "AI 服务暂时不可用，请稍后重试", True
     else:
-        title, default_detail = "AI 服务请求失败", "AI 服务暂时无法处理，请稍后重试"
+        title, default_detail, retryable = "AI 服务请求异常", "AI 服务返回异常，请联系管理员处理", False
     return ProblemException(Problem(
         title=title,
         status=status,
         detail=detail or default_detail,
         code=f"UPSTREAM_{status}",
-        retryable=True,
+        retryable=retryable,
         retry_after_ms=retry_after_ms,
     ))
 

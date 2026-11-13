@@ -151,8 +151,12 @@ export function useSessions(opts: UseSessionsOptions) {
     loadingRef.current = true;
     activeIdRef.current = sess.id;
     setActiveId(sess.id);
-    setMode(sess.mode);
-    modeRef.current = sess.mode;
+    // RAG 模式已移除：一律按 agent 装载，旧 rag 会话顺手迁移存储（否则消息区恒空白）
+    setMode('agent');
+    modeRef.current = 'agent';
+    if (sess.mode !== 'agent') {
+      void patchSession(sess.id, { mode: 'agent' }).catch(() => undefined);
+    }
     optsRef.current.onSessionLoaded(sess);
     // 渲染（回放消息）完成后解除禁写窗口
     setTimeout(() => {

@@ -52,10 +52,12 @@ FastAPI  backend/app/          ← AI 能力唯一接入层（比赛规则要求
  ├── api/routes                # /v1/chat/completions（RAG问答）
  │                             # /v1/agent/chat（Agent SSE）
  │                             # /v1/vision/caption（GLM-4V 图生文案）
- ├── agent/                    # 手写 ReAct 循环 + 工具注册表
- │   ├── loop                  #   DeepSeek function calling，最多 5 步
- │   └── tools                 #   10 个工具：kb_search / data_query / copywriting / policy_check
- │                             #   product_lookup / order_lookup / refund_flow / modify_address
+ ├── agent/                    # LangGraph 多 Agent 编排 + 工具注册表
+ │   ├── graph                 #   StateGraph：router→售前/售后/投诉→终审
+ │   ├── router                #   意图路由（售前/售后/投诉/澄清，JSON 模式）
+ │   ├── llm                   #   DeepSeek 共享客户端（4 次重试 + JSON 模式）
+ │   └── tools                 #   8 个客服工具：product_lookup / kb_search
+ │                             #   order_lookup / refund_flow / modify_address
  │                             #   intercept_logistics / return_exchange
  ├── rag/                      # 混合检索（jieba BM25 + 向量 RRF 融合）
  │   ├── pipeline              #   分块 → fastembed 嵌入 → LanceDB
@@ -73,7 +75,7 @@ FastAPI  backend/app/          ← AI 能力唯一接入层（比赛规则要求
 
 - **前端**：Next.js 16（App Router）+ TypeScript（strict）+ Tailwind CSS + Vercel AI SDK
 - **后端**：Python 3.12 + FastAPI + httpx；RAG：fastembed（BGE-small-zh 本地）+ LanceDB + jieba
-- **Agent**：手写 ReAct 循环（DeepSeek function calling），无 LangChain/LangGraph 依赖
+- **Agent**：LangGraph StateGraph 多 Agent 编排（Router→售前/售后/投诉→终审），DeepSeek function calling 工具调用
 - **MCP**：`mcp`（FastMCP，stdio 传输）
 - **工程质量**：ESLint 9（native flat config）+ Pytest 风格自测脚本
 
@@ -102,13 +104,13 @@ npm run dev                             # http://localhost:3000
 
 ### 三步接入真实店铺数据（P4 Provider 插件化）
 
-`data_query` 工具不再写死样例 dict，改为 `DataProvider` Protocol + `.env` 切换：
+`order_lookup` / `product_lookup` 等工具的取数统一走 `DataProvider` Protocol，换真实数据源只改实现、不改业务代码：
 
-1. **看契约**：打开 `backend/app/agent/data_provider.py`，实现 `DataProvider.get_snapshot(date) -> dict`（唯一契约，返回体与现有样例同结构：gmv/orders/visitors/conversion/refund_rate + 商品销量 + 流量来源）。
+1. **看契约**：打开 `backend/app/agent/data_provider.py`，实现 `DataProvider` 的查询方法（`get_orders` / `get_products` / `get_aftersales` / `get_snapshot`）。
 2. **接数据源**：新建 `class MyShopProvider`（直连 MySQL/ERP API/CSV 均可），在 `get_provider()` 工厂里注册你的分支。
-3. **切环境变量**：`backend/.env` 设 `DATA_PROVIDER=mys`（默认 `sqlite` 真查 30 天种子库，`mock` 为兜底样例；种子库用 `python -m backend.app.agent.seed_store` 重建）。
+3. **切环境变量**：`backend/.env` 设 `DATA_PROVIDER=mys`（默认 `sqlite` 真查种子库，`mock` 为兜底样例；种子库用 `python -m backend.app.agent.seed_store` 重建）。
 
-Agent 回答会带上 `source` 字段标明数据来自 sqlite / mock / 你的实现，步骤卡片照常展示。
+客服对话的查单、推荐、退款都会经由它取数，工具与步骤卡照常展示。
 
 ## 项目结构
 
@@ -118,11 +120,14 @@ backend/
     main.py             # FastAPI 入口：AI 端点 + 会话持久化 + 引用溯源（/v1/sessions、/v1/rag/search）
     store.py            # SQLite 会话存储（stdlib autocommit，data/app.db 不入库）
     agent/
-      loop.py           # 手写 ReAct 循环（step/delta/done/error SSE 事件）
+      graph.py          # LangGraph 状态图：router→售前/售后/投诉→终审 + 思维链 + 幻觉硬校验
+      llm.py            # DeepSeek 共享客户端（4 次重试 + JSON 模式）
+      router.py         # 意图路由（售前/售后/投诉/澄清）
+      loop.py           # [遗留] 旧手写 ReAct，已被 graph.py 取代
       data_provider.py  # DataProvider Protocol（sqlite 真查 / mock 兜底，.env 切换）
       seed_store.py     # 30 天经营种子库生成器（幂等，data/store.db 不入库）
       tools/__init__.py # Tool dataclass + 注册表
-      __init__.py       # 10 个工具实现（检索/数据/文案/合规/订单/退款/改址/拦截/退换）
+      __init__.py       # 8 个客服工具实现（检索/订单/退款/改址/拦截/退换）
     rag/
       pipeline.py       # 语料清洗/分块/嵌入/LanceDB 索引
       retrieve.py       # BM25+向量 RRF 融合检索

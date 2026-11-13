@@ -124,6 +124,9 @@ def kb_chunk_update(chunk_id: str, body: ChunkUpdateBody) -> dict:
     text = body.text.strip()
     if not text:
         return _err(400, "text 不能为空")
+    # 防注入：LanceDB update 的 where 是拼接 SQL，chunk_id 来自 URL，先拦引号/反斜杠
+    if not chunk_id or any(ch in chunk_id for ch in ("'", '"', ";", "\\", "\0")):
+        return _err(400, "非法切片 ID")
     table = _open_table()
     if table is None:
         return _err(404, "知识库索引尚未构建，请先在知识库页完成索引构建")

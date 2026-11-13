@@ -1,10 +1,10 @@
 # 店智 Copilot 🛒
 
-> 店智 Copilot：中小电商运营者的 AI 工作台——看数据、查问题、处理售后、写文案，一个对话框全搞定。
+> 店智 Copilot：面向客户的电商智能客服 Agent——售前查商品推荐、售后查订单退款，一个对话框全搞定。
 
-> 支持 RAG 知识库问答（43 篇语料，回答带 [1][2] 溯源）、多步 Agent 工具调用、两段式退款门控、商品图识别生成文案、语音输入、会话持久化与引用溯源。
+> 支持 LangGraph 多 Agent 编排（售前/售后/投诉升级/澄清 + 终审）、RAG 知识库问答（43 篇语料，回答带 [1][2] 溯源）、两段式退款门控、思维链过程可视化、会话持久化与引用溯源。
 
-> 事实基线：43 篇知识库语料 · 12 段场景案例 · 20 单种子订单 · 四个入口（工作台 / 对话 / 数据 / 知识库）。产品口径以 [docs/positioning.md](./docs/positioning.md) 为唯一真源。
+> 事实基线：43 篇知识库语料 · 12 段场景案例 · 20 单种子订单 · 2 个入口（客服对话 / 知识库）。产品口径以 [docs/positioning.md](./docs/positioning.md) 为唯一真源。
 
 ## 🤖 Agent 能做什么（售后处理场景）
 
@@ -93,12 +93,10 @@ npm install
 npm run dev                             # http://localhost:3000
 ```
 
-打开 http://localhost:3000（`/` 自动跳 `/workspace`），左侧四个入口跨路由常驻，移动端收成顶部导航：
+打开 http://localhost:3000（`/` 自动跳 `/chat`），左侧两个入口跨路由常驻，移动端收成顶部导航：
 
-- **工作台 `/workspace`**：「早上好，今天先看这三件事」。4 张 KPI（GMV / 订单数 / 退款率 / 转化率）、Agent 今日洞察与待办、快捷操作、最近会话，以及近 30 天趋势、热销商品、流量来源、订单状态
-- **对话 `/chat`**：RAG 与 Agent 双模式，4 张场景卡点击预填；意图 chip 自动切换模式，Agent 工具调用以步骤卡展开；回答带 `[1][2]` 角标，**点击弹出来源卡片可溯源核对**；会话栏支持新建/改名/两步确认删除（SQLite `data/app.db` 持久化）
-- **数据 `/data`**：订单 / 商品 / 售后三张表只读查询，支持搜索、状态筛选与结果计数；行内「对话」跳转带单号预填，「退款」直接走门控弹窗
-- **知识库 `/kb`**：43 篇文档的切片列表与行内编辑，保存即重新嵌入并失效旧检索；重建索引进度与耗时在 toast 里显示
+- **客服对话 `/chat`**：LangGraph 多 Agent 编排。Router 自动判断售前/售后/投诉/澄清，售前查商品推荐、售后查订单退款；回答带 `[1][2]` 角标，**点击弹出来源卡片可溯源核对**；「Agent 处理过程」面板展示 router→specialist→review 每步留痕；会话栏支持新建/改名/两步确认删除（SQLite `data/app.db` 持久化）
+- **知识库 `/kb`**：43 篇文档的切片列表与行内编辑，商家维护商品知识/售后政策；保存即重新嵌入并失效旧检索；重建索引进度与耗时在 toast 里显示
 
 其他细节：**Markdown 渲染**（代码块/表格/列表/加粗，消息 hover 可复制、重新生成）；**多模态**（输入框旁 🖼️ 上传商品图 → GLM-4V 生成标题/卖点/描述；🎤 语音输入走浏览器 Web Speech API）。
 
@@ -139,10 +137,8 @@ data/
   app.db                # 会话库（构建产物，不入库）
   store.db              # 30 天经营数据（构建产物，不入库）
 app/
-  page.tsx              # `/` → `/workspace` 重定向
-  workspace/page.tsx    # 工作台（KPI / 待办 / 洞察 / 30 天趋势）
-  chat/page.tsx         # 对话（RAG / Agent 双模式 + 场景卡）
-  data/page.tsx         # 业务数据（订单 / 商品 / 售后只读查询）
+  page.tsx              # `/` → `/chat` 重定向
+  chat/page.tsx         # 客服对话（LangGraph 多 Agent + 思维链面板 + 场景卡）
   kb/page.tsx           # 知识库（切片编辑即生效）
   layout.tsx            # 全局壳：左导航 + 移动端顶部导航
   api/chat/route.ts     # RAG 问答代理（AI SDK streamText）
@@ -150,17 +146,18 @@ app/
   api/vision/route.ts   # 图生文案代理
   api/v1/[...path]/route.ts  # /api/v1/* 同源代理 → FastAPI（会话/溯源，避免浏览器直连 8000）
 components/
-  WorkspaceSidebar.tsx  # 全局左导航（工作台 / 对话 / 数据 / 知识库）
+  WorkspaceSidebar.tsx  # 全局左导航（客服对话 / 知识库）
   MobileNav.tsx         # <md 顶部横向导航
   ChatWindow.tsx        # 聊天主窗口（会话状态机接入 + 引用溯源 + 语音/图片）
   Sidebar.tsx           # 对话页二级会话栏（新建/改名/两步确认删除/mode 徽章）
-  ScenarioCards.tsx     # 4 张场景卡（看数据 / 查问题 / 处理投诉 / 写文案）
+  ScenarioCards.tsx     # 4 张场景卡（咨询商品 / 查订单 / 退款退货 / 投诉建议）
   RefundDialog.tsx      # 退款门控弹窗（校验 → 确认 → 回执）
+  ThoughtChain.tsx      # 多 Agent 处理过程面板（router→specialist→review 思维链）
   ui/                   # Button / Badge / Card / PageHeader / EmptyState / Skeleton / PageContainer
   MarkdownText.tsx      # Markdown 渲染（fence-aware 预处理 + [n]→可点角标）
   CitationCard.tsx      # 引用来源溯源卡片（右下弹出）
   MessageActions.tsx    # 消息 hover 操作条（复制/重新生成）
-  MessageBubble.tsx     # 统一消息气泡（双模式共用）
+  MessageBubble.tsx     # 统一消息气泡
   AgentSteps.tsx        # Agent 工具步骤卡片
 lib/
   ai.ts                 # AI provider（指向本地 FastAPI）

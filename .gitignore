@@ -37,3 +37,7 @@ Thumbs.db
 # 本地编排与浏览器产物（不参与提交）
 .omo/
 .playwright-mcp/
+data/checkpoints.db
+data/checkpoints.db-shm
+data/checkpoints.db-wal
+data/*.db.bak.*

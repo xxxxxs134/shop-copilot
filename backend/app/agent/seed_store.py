@@ -24,6 +24,9 @@ from pathlib import Path
 
 STORE_DB = Path(__file__).resolve().parents[3] / "data" / "store.db"
 
+# 演示单号固定前缀：下单时间随生成日滚动，单号保持不变，文档/截图可长期引用
+ORDER_PREFIX = "SO20261027"
+
 PRODUCTS = [
     ("纯棉基础款T恤", 79.9),
     ("便携式充电宝", 99.0),
@@ -168,7 +171,7 @@ def _orders_seed(end: date) -> list[tuple]:
         ("020", "施**", [item("SKU1012", "老款帆布双肩包", 99.0, 1)], "unpaid", 0,
          "河北省石家庄市裕华区槐安东路121号万达广场B座1809室"),
     ]
-    prefix = f"SO{end.strftime('%Y%m%d')}"
+    prefix = ORDER_PREFIX
     rows = []
     for suffix, buyer, items, status, days_ago, address in plans:
         amount = round(sum(i["price"] * i["qty"] for i in items), 2)
@@ -194,7 +197,7 @@ def _aftersales_seed(end: date) -> list[tuple]:
     def ds(days_ago: int) -> str:
         return (end - timedelta(days=days_ago)).isoformat()
 
-    prefix = f"SO{end.strftime('%Y%m%d')}"
+    prefix = ORDER_PREFIX
     return [
         (1, f"{prefix}016", "仅退款", "退款中", 199.0, ds(2)),
         (2, f"{prefix}017", "退货退款", "退款中", 129.0, ds(3)),

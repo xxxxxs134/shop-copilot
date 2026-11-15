@@ -1,4 +1,4 @@
-fastapi>=0.115
+﻿fastapi>=0.115
 uvicorn[standard]>=0.32
 httpx>=0.28
 python-dotenv>=1.0
@@ -7,3 +7,4 @@ lancedb>=0.40
 jieba>=0.42
 mcp>=1.0,<2
 langgraph>=0.2.8
+langgraph-checkpoint-sqlite>=1.0.4,<2

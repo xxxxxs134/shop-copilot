@@ -3,7 +3,7 @@
 设计（参考 ecom-service-agent / mini-agent 的手写注册表模式）：
 - 每个工具 = name + description + JSON Schema parameters + 同步 fn
 - fn 返回字符串（JSON 或自然语言），直接作为 tool message 回填给模型
-- loop.py 通过 list_schemas() 生成 OpenAI function calling 的 tools 数组
+- graph.py 的 _run_react 通过 list_schemas() 生成 function calling 的 tools 数组
 """
 
 from __future__ import annotations

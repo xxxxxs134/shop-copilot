@@ -17,7 +17,8 @@ import { runAgentStream } from '@/lib/agentRun';
 import { requestEscalation, type EscalationData } from '@/lib/escalateClient';
 import { useSessions, DEFAULT_TITLE } from '@/lib/useSessions';
 import { ragSearch, type AgentMessage, type CitationSource } from '@/lib/sessionsClient';
-import { fetchIntent, type IntentInfo } from '@/lib/intentClient';
+import type { IntentInfo } from '@/lib/intentClient';
+import type { RouterInfo } from '@/lib/agentClient';
 import { parseProblem, problemMessage } from '@/lib/errors';
 
 /** SpeechRecognition 最小接口（浏览器 API 无官方 TS 类型） */
@@ -216,7 +217,11 @@ export function ChatWindow() {
   const busy = generating || visionLoading || sessions.busy;
 
   // ── Agent 单轮执行（handleSubmit / regenerateAgent 共用）──
-  async function runAgentTurn(text: string, history: Array<{ role: string; content: string }>) {
+  async function runAgentTurn(
+    text: string,
+    history: Array<{ role: string; content: string }>,
+    threadId?: string,
+  ) {
     setAgentError(null);
     setAgentStreaming(true);
     const abort = new AbortController();
@@ -229,6 +234,16 @@ export function ChatWindow() {
         (st) =>
           setAgentMessages((prev) => {
             const next = [...prev];
+            // 路由意图回填到本轮 user 消息（done 时随 routerInfo 到达）
+            if (st.routerInfo) {
+              for (let i = next.length - 1; i >= 0; i--) {
+                const m = next[i];
+                if (m.role === 'user' && !m.intent) {
+                  next[i] = { ...m, intent: buildIntentInfo(st.routerInfo, m.content) };
+                  break;
+                }
+              }
+            }
             const last = next[next.length - 1];
             next[next.length - 1] = {
               ...last,
@@ -242,7 +257,7 @@ export function ChatWindow() {
           }),
         (msg) => setAgentError(msg),
         abort.signal,
-        sessions.activeId ?? undefined,
+        threadId ?? sessions.activeId ?? undefined,
       );
     } finally {
       setAgentStreaming(false);
@@ -263,20 +278,18 @@ export function ChatWindow() {
     void runAgentTurn(lastUser.content, history);
   }
 
-  // ── 意图回填（chip）──
+  // ── 意图回填（chip）：来自 router 节点，与实际分流同源，杜绝标签打架 ──
 
-  /** Agent 模式：意图只挂 chip，永不回切（§2.2 路由表第三行） */
-  function attachAgentIntent(text: string, intent: IntentInfo): void {
-    setAgentMessages((prev) => {
-      for (let i = prev.length - 1; i >= 0; i--) {
-        const m = prev[i];
-        if (m.role !== 'user' || m.content !== text || m.intent) continue;
-        const next = [...prev];
-        next[i] = { ...m, intent };
-        return next;
-      }
-      return prev;
-    });
+  /** router 意图 → IntentInfo（chip 用）；order_id 用正则补实体标签 */
+  function buildIntentInfo(router: RouterInfo, text: string): IntentInfo {
+    const m = text.match(/SO\d{11}/);
+    return {
+      intent: router.intent,
+      target: 'agent',
+      reason: `路由置信度 ${(router.confidence ?? 0).toFixed(2)}`,
+      sentiment: router.sentiment ?? undefined,
+      ...(m ? { entities: { order_id: m[0] } } : {}),
+    };
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -285,18 +298,15 @@ export function ChatWindow() {
     if (!text || busy) return;
     setInput('');
 
-    // 意图识别与回答并行发起
-    const intentP = fetchIntent(text);
-
+    let threadId = sessions.activeId ?? undefined;
     if (sessions.activeId === null) {
-      await sessions.newSession('agent');
+      const created = await sessions.newSession('agent');
+      if (!created) return;
+      threadId = created.id;
     }
     const history = agentMessages.map((m) => ({ role: m.role, content: m.content }));
     setAgentMessages((prev) => [...prev, { role: 'user', content: text }]);
-    void intentP.then((intent) => {
-      if (intent) attachAgentIntent(text, intent);
-    });
-    await runAgentTurn(text, history);
+    await runAgentTurn(text, history, threadId);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -520,7 +530,6 @@ export function ChatWindow() {
                         onCite={(n) => void handleCite(n)}
                         onRegenerate={regenerateAgent}
                         intent={m.intent}
-                        mode={mode}
                       />
                     </div>
                   ))}

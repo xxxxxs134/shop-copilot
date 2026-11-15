@@ -1,11 +1,11 @@
 # 提交前检查单（店智 Copilot）
 
 > 用法：提交前从上到下走一遍，每项打勾。预计 10 分钟（不含录视频）。
-> 最近一次核验：2026-10-28 21:10
+> 最近一次核验：2026-11-15
 
 ## 0. 只有人能做的三件事
 
-- [ ] `README.md`「团队信息」填真实姓名 / 学校 / 专业（当前「待填」）
+- [ ] `README.md`「团队信息」确认为真实姓名 / 学校 / 专业（已填：邢博、刘庆昊、孔克铮 / 河北传媒学院 / 人工智能）
 - [ ] 录制演示视频：按 `docs/video-script.md`，5–8 min、1080p、普通话、带字幕，导出 MP4
 - [ ] （加分，可选）公网演示地址 + 评审体验账号
 
@@ -33,23 +33,23 @@ npm run build
 node scripts/smoke.mjs
 ```
 - [ ] 前三条退出码 0
-- [ ] smoke **11/11 PASS**，退出码 0（需 3000 + 8000 已启动）
+- [ ] smoke **9/9 PASS**，退出码 0（需 3000 + 8000 已启动）
 
 ## 3. 文档事实一致性（2 min）
 
 ```powershell
-# 43 篇语料 / 12 段场景 / 20 单种子 / 4 个入口
+# 43 篇语料 / 12 段场景 / 20 单种子 / 2 个入口
 (Get-ChildItem data\raw -Filter *.md).Count          # 43
 (Select-String docs\scenarios.md -Pattern '^## 场景 ').Count
 python -c "import sqlite3;print(sqlite3.connect('data/store.db').execute('select count(*) from orders').fetchone()[0])"
 
 # PDF：页数与口径
-python -c "from pypdf import PdfReader;r=PdfReader('docs/tech-doc.pdf');t=''.join((p.extract_text() or '') for p in r.pages);print(len(r.pages), '43 篇' in t, '40 篇' in t, 'v1.1' in t)"
+python -c "from pypdf import PdfReader;r=PdfReader('docs/tech-doc.pdf');t=''.join((p.extract_text() or '') for p in r.pages);print(len(r.pages), '43 篇' in t, '40 篇' in t, 'v1.3' in t)"
 ```
-- [ ] 43 / 12 / 20 / 4 四个数字与 README、`docs/positioning.md` 一致
-- [ ] PDF ≤30 页，且输出 `10 True False True`（10 页 / 含 43 篇 / 不含 40 篇 / v1.1）
+- [ ] 43 / 12 / 20 / 2 四个数字与 README、`docs/positioning.md` 一致
+- [ ] PDF ≤30 页，且输出 `16 True False True`（16 页 / 含 43 篇 / 不含 40 篇 / v1.3）
 - [ ] 禁用词只出现在竞品对比或「禁止表述」语境：
-  `git grep -n -E "智能客服 Agent|智能客服系统|客服工作台|一键转人工|转人工协同"`
+  `git grep -n -E "AI 工作台|运营工作台|客服工作台|一键转人工|转人工协同"`
 
 ## 4. Git 与仓库（2 min）
 
@@ -66,7 +66,7 @@ git push -u origin master
 ## 5. 提交物清单
 
 - [ ] 代码仓库链接（Public）
-- [ ] `docs/tech-doc.pdf`（v1.1，10 页）
+- [ ] `docs/tech-doc.pdf`（v1.3，16 页）
 - [ ] 演示视频 MP4（5–8 min，1080p）
 - [ ] README（含团队信息、架构、快速开始）
 - [ ] `.env.example` + `backend/.env.example`

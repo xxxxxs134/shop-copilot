@@ -56,7 +56,9 @@ export function ThoughtChain({ steps }: { steps: ThoughtStep[] }) {
                     {s.detail && <span className="text-ink-subtle">· {s.detail}</span>}
                   </div>
                   {s.output && (
-                    <p className="mt-0.5 line-clamp-2 break-words text-ink-muted">{s.output}</p>
+                    <p className="mt-0.5 line-clamp-4 break-words text-ink-muted">
+                      {s.output.replace(/\*\*/g, '').replace(/`/g, '')}
+                    </p>
                   )}
                 </div>
               </li>

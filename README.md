@@ -123,7 +123,6 @@ backend/
       graph.py          # LangGraph 状态图：router→售前/售后/投诉→终审 + 思维链 + 幻觉硬校验
       llm.py            # DeepSeek 共享客户端（4 次重试 + JSON 模式）
       router.py         # 意图路由（售前/售后/投诉/澄清）
-      loop.py           # [遗留] 旧手写 ReAct，已被 graph.py 取代
       data_provider.py  # DataProvider Protocol（sqlite 真查 / mock 兜底，.env 切换）
       seed_store.py     # 30 天经营种子库生成器（幂等，data/store.db 不入库）
       tools/__init__.py # Tool dataclass + 注册表
@@ -146,7 +145,6 @@ app/
   chat/page.tsx         # 客服对话（LangGraph 多 Agent + 思维链面板 + 场景卡）
   kb/page.tsx           # 知识库（切片编辑即生效）
   layout.tsx            # 全局壳：左导航 + 移动端顶部导航
-  api/chat/route.ts     # RAG 问答代理（AI SDK streamText）
   api/agent/route.ts    # Agent SSE 透传代理
   api/vision/route.ts   # 图生文案代理
   api/v1/[...path]/route.ts  # /api/v1/* 同源代理 → FastAPI（会话/溯源，避免浏览器直连 8000）
@@ -165,17 +163,16 @@ components/
   MessageBubble.tsx     # 统一消息气泡
   AgentSteps.tsx        # Agent 工具步骤卡片
 lib/
-  ai.ts                 # AI provider（指向本地 FastAPI）
   agentClient.ts        # Agent SSE 解析器
   agentRun.ts           # Agent 单轮执行器（SSE→回调，组件瘦身）
-  intentClient.ts       # 意图分类客户端（/v1/intent）
+  intentClient.ts       # 意图信息类型（IntentInfo/Sentiment/EntityMap）
   escalateClient.ts     # 投诉处理方案客户端
   sessionsClient.ts     # 会话 CRUD + ragSearch 类型化 fetch
   useSessions.ts        # 会话状态机 hook（debounce 保存/签名守卫/模式切换）
   cn.ts                 # className 合并（零依赖）
   status.ts             # 订单状态元数据（文案 + 色调）
 scripts/
-  smoke.mjs             # 交付冒烟：11 项接口/页面检查，任一失败退出码 1
+  smoke.mjs             # 交付冒烟：9 项接口/页面检查，任一失败退出码 1
 docs/
   positioning.md        # 产品定位唯一真源（README / 演示 / 场景库都以此为准）
   demo-path.md          # 5 分钟演示路径（含种子订单核对 SQL）
@@ -197,7 +194,7 @@ python -m backend.app.rag.pipeline build   # 索引构建（C8）
 python -m backend.app.rag.selftest         # 检索质量 ≥80%（C9，当前 90%）
 python -m backend.app.rag.eval             # 开/关 RAG 对比（C10）
 npx tsc --noEmit && npm run lint && npm run build  # 前端全绿
-node scripts/smoke.mjs                     # 交付冒烟 11 项（双服务启动后跑）
+node scripts/smoke.mjs                     # 交付冒烟 9 项（双服务启动后跑）
 ```
 
 MCP Inspector 测试：

@@ -1,7 +1,7 @@
 /**
  * Agent 模式 SSE 客户端
  *
- * 协议（与 backend/app/agent/loop.py 对齐）：
+ * 协议（与 backend/app/agent/graph.py 对齐）：
  *   data: {"type":"step","tool":"...","args":{...}}            — 工具开始
  *   data: {"type":"step_result","tool":"...","summary":"..."}  — 工具结果
  *   data: {"type":"delta","text":"..."}                        — 流式文本片段
@@ -36,12 +36,21 @@ export interface ThoughtStep {
   detail?: string;
 }
 
+/** 路由意图 + 情绪（后端 router 节点产出，chip 与实际路由同源） */
+export interface RouterInfo {
+  intent: string;
+  confidence?: number;
+  sentiment?: { label: string; score: number; cues: string[] } | null;
+}
+
 export interface AgentDoneEvent {
   type: 'done';
   citations: Array<{ title?: string; category?: string }>;
   thought_chain?: ThoughtStep[];
   /** 知识库命中（供 [n] 引用溯源 → CitationCard） */
   kb_hits?: Array<{ title: string; category: string; text: string }>;
+  /** 路由意图（前端回填到 user 消息 chip，与实际分流同源） */
+  router?: RouterInfo;
 }
 
 export interface AgentErrorEvent {

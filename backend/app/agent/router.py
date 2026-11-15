@@ -33,13 +33,29 @@ ROUTER_SYSTEM = """你是电商客服的意图路由，把客户最新一条消�
 4. 只有极短且完全无信息的话 → clarify
 
 只输出一个 JSON，不要任何其它文字：
-{"intent": "presales" 或 "aftersales" 或 "escalation" 或 "clarify", "confidence": 0.0 到 1.0 的小数}"""
+{"intent": "presales" 或 "aftersales" 或 "escalation" 或 "clarify", "confidence": 0.0 到 1.0 的小数, "sentiment": {"label": "angry/anxious/frustrated/neutral/positive 之一", "score": 0.0 到 1.0, "cues": ["触发线索词"]}}"""
 
 _VALID_INTENTS = {"presales", "aftersales", "escalation", "clarify"}
+_VALID_SENTIMENTS = {"angry", "anxious", "frustrated", "neutral", "positive"}
 
 
-async def classify(messages: list[dict]) -> tuple[str, float]:
-    """messages = [*历史, 最新 user]。返回 (intent, confidence)。"""
+def _parse_sentiment(raw: object) -> dict | None:
+    """情绪解析：形状不对整体丢弃（不阻断意图主字段）。"""
+    if not isinstance(raw, dict):
+        return None
+    label = str(raw.get("label", "")).strip().lower()
+    if label not in _VALID_SENTIMENTS:
+        return None
+    try:
+        score = float(raw.get("score", 0.0))
+    except (TypeError, ValueError):
+        score = 0.0
+    cues = [str(c) for c in raw.get("cues", []) if isinstance(c, str)] if isinstance(raw.get("cues"), list) else []
+    return {"label": label, "score": max(0.0, min(1.0, score)), "cues": cues}
+
+
+async def classify(messages: list[dict]) -> tuple[str, float, dict | None]:
+    """messages = [*历史, 最新 user]。返回 (intent, confidence, sentiment)。"""
     data = await chat_json([{"role": "system", "content": ROUTER_SYSTEM}, *messages], temperature=0.0)
     intent = str(data.get("intent", "")).strip().lower()
     if intent not in _VALID_INTENTS:
@@ -48,5 +64,6 @@ async def classify(messages: list[dict]) -> tuple[str, float]:
         conf = float(data.get("confidence", 0.0))
     except (TypeError, ValueError):
         conf = 0.0
-    logger.info("路由结果: intent=%s confidence=%.2f", intent, conf)
-    return intent, max(0.0, min(1.0, conf))
+    sentiment = _parse_sentiment(data.get("sentiment"))
+    logger.info("路由结果: intent=%s confidence=%.2f sentiment=%s", intent, conf, sentiment and sentiment["label"])
+    return intent, max(0.0, min(1.0, conf)), sentiment

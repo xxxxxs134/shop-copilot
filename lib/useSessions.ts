@@ -185,7 +185,7 @@ export function useSessions(opts: UseSessionsOptions) {
 
   /** 新建会话（可指定 mode，缺省沿用当前），并设为活跃 */
   const newSession = useCallback(
-    async (nextMode?: SessionMode): Promise<void> => {
+    async (nextMode?: SessionMode): Promise<SessionFull | null> => {
       await flush();
       setBusy(true);
       try {
@@ -196,8 +196,10 @@ export function useSessions(opts: UseSessionsOptions) {
         ]);
         applyLoaded(sess);
         setError(null);
+        return sess;
       } catch (err) {
         setError(errText(err));
+        return null;
       } finally {
         setBusy(false);
       }

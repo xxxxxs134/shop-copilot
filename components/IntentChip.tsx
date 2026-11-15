@@ -1,8 +1,12 @@
 import type { IntentInfo, Sentiment } from '@/lib/intentClient';
-import type { SessionMode } from '@/lib/sessionsClient';
 
-/** intent → 中文标签（§2.2 chip 文案）；未登记的值原样展示 */
+/** intent → 中文标签（与后端 router 四类一致）；旧会话历史值兜底保留 */
 const INTENT_LABELS: Record<string, string | undefined> = {
+  presales: '售前咨询',
+  aftersales: '售后处理',
+  escalation: '投诉升级',
+  clarify: '待澄清',
+  // 旧会话存储的历史分类（向后兼容，仅老数据会命中）
   knowledge: '知识问答',
   data: '数据查询',
   policy: '合规检查',
@@ -86,24 +90,14 @@ function sentimentMeta(label: string): SentimentMeta {
 /**
  * 意图路由 chip + 实体/情绪增强（渲染在 user 消息气泡上方）
  *
- * 主 chip 文案：`意图：数据查询 · 路由 → Agent 工具`
- * 后缀（§2.2 路由表，二选一）：
- * - 「已按意图切换」：RAG 模式按意图自动切到 Agent（intent.switched 由 ChatWindow 写入）
- * - 「RAG 模式可溯源」：Agent 模式下识别为 knowledge（用户显式选了 Agent，不回切）
- * `reason` 放 title 悬停可见，不占 chip 正文。
- *
- * 主 chip 下方 flex-wrap 行：实体小标签（icon + 值）+ 末尾情绪徽章（老数据无此二字段 → 不渲染）。
+ * 意图来自图内 router 节点（done 事件回填），与实际分流同源：
+ * `意图：售前咨询 · 路由 → Agent 工具`，悬停 reason 可见置信度。
+ * 主 chip 下方 flex-wrap 行：实体小标签（icon + 值）+ 末尾情绪徽章。
  */
-export function IntentChip({ intent, mode }: { intent: IntentInfo; mode: SessionMode }) {
+export function IntentChip({ intent }: { intent: IntentInfo }) {
   const intentLabel = INTENT_LABELS[intent.intent] ?? intent.intent;
   const targetLabel = TARGET_LABELS[intent.target] ?? `→ ${intent.target}`;
-  const suffix = intent.switched
-    ? '已按意图切换'
-    : intent.intent === 'knowledge' && mode === 'agent'
-      ? 'RAG 模式可溯源'
-      : null;
-
-  const label = `意图：${intentLabel} · 路由 ${targetLabel}${suffix ? ` · ${suffix}` : ''}`;
+  const label = `意图：${intentLabel} · 路由 ${targetLabel}`;
   const entities = Object.entries(intent.entities ?? {});
   const meta = intent.sentiment ? sentimentMeta(intent.sentiment.label) : null;
 

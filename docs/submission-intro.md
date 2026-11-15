@@ -8,10 +8,10 @@
 
 店智 Copilot 面向电商店铺的**客户**（下单前咨询、下单后查单退款投诉），解决"问商品、查订单、办售后"反复在多个页面之间切换的问题。系统把服务收进两个入口：
 
-- **客服对话**：LangGraph 多 Agent 编排，自动判断售前/售后/投诉，调用对应工具，回答带 `[n]` 引用可溯源。
-- **知识库**：43 篇运营知识文档，商家维护商品知识/售后政策，Agent 据此回答；支持切片编辑，保存后重新嵌入并失效旧检索。
+- **客服对话 `/chat`**：LangGraph 多 Agent 编排，Router 自动判断售前/售后/投诉/澄清，调用对应工具，回答带 `[n]` 引用可溯源。
+- **知识库 `/kb`**：43 篇运营知识文档，商家维护商品知识/售后政策，Agent 据此回答；支持切片编辑，保存后重新嵌入并失效旧检索。
 
-项目自带 20 单模拟订单和 43 篇知识库语料，不依赖真实平台授权。启动方式：
+项目自带 20 单模拟订单、12 个 SKU 和 43 篇知识库语料，不依赖真实平台授权。启动方式：
 
 ```bash
 pip install -r backend/requirements.txt
@@ -28,28 +28,28 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:3000`，按“工作台 → 数据 → 对话查订单 → 退款校验 → RAG 问答 → Agent 工具调用”的顺序即可完成演示。
+打开 `http://localhost:3000`（`/` 自动跳 `/chat`），按"客服对话 → 售前咨询 → 查订单 → 退款门控 → 投诉升级 → 知识库编辑"的顺序即可完成演示。
 
-![图 1：工作台首页，4 张 KPI 卡与待办](submission-assets/01-workspace.png)
+![图 1：客服对话首页与四张客户场景卡](submission-assets/01-chat-home.png)
 
-![图 2：数据页订单表与状态筛选](submission-assets/02-data.png)
+![图 2：售前咨询，Agent 推荐商品并带 [1] 引用](submission-assets/02-presales.png)
 
 ## 二、项目亮点
 
-1. **不是只会聊天的问答工具，而是能办事的工作台**  
-   查单、看数、退款校验、规则问答、文案生成都在同一个对话里完成。
+1. **不是只会聊天的问答工具，而是能办事的客服**  
+   查订单、查物流、退款、改地址、拦截物流、退换货都在同一个对话里完成，用户不用在"问"和"做"之间切换系统。
 
-2. **意图路由，不是所有问题都走向量检索**  
-   `knowledge / general` 走 RAG；`data / policy / copywriting` 走 Agent。界面用 chip 显示“数据查询 → Agent”等判断结果，用户知道系统为什么切模式。
+2. **LangGraph 多 Agent 路由，不是所有问题都走向量检索**  
+   Router 先判断售前咨询 / 售后处理 / 投诉升级 / 追问澄清，再交给对应专业 Agent；同时输出置信度与情绪标签，愤怒或焦虑的客户先安抚再办事。售前只拿商品与知识工具，售后只拿订单与办理工具，职责在工具集层面隔离。
 
 3. **RAG 回答带 `[1][2]` 角标，来源可点开核对**  
-   回答不是“模型凭印象说”，而是先检索知识库，再把命中的文档片段拼进上下文。点角标能看到标题、分类和原文片段。
+   回答不是"模型凭印象说"，而是先检索知识库，再把命中的文档片段拼进上下文。点角标能看到标题、分类和原文片段。
 
 4. **Agent 过程透明**  
-   手写 ReAct 循环，最多 5 步；每次工具调用都以步骤卡展示“调了什么工具、花了多久、返回什么”。目前注册 10 个工具，覆盖知识检索、数据查询、文案、合规、订单、退款、改地址、物流拦截、退换货。
+   LangGraph 编排，每个 specialist 内部最多 5 步工具调用；每次调用都以步骤卡展示"调了什么工具、返回什么"。主链路 8 个工具（售前 2 + 售后 6），另有 4 个 MCP 工具。
 
 5. **敏感操作两段式门控**  
-   退款、改地址、物流拦截等操作统一走 `validate → 用户确认 → execute`。模型不能直接动钱；校验不通过时直接列出原因，例如“订单已超过 7 天售后期，无法自助退款”。
+   退款、改地址、物流拦截、退换货统一走 `validate → 用户确认 → execute`。模型不能直接动钱；校验不通过时直接列出原因，例如"退款金额 418 超过实付 159.8"。
 
 6. **知识库编辑即生效**  
    修改切片后重新嵌入，旧检索立即失效，下一次提问就能看到新口径，不需要重启服务。
@@ -57,12 +57,12 @@ npm run dev
 7. **真实数据可插拔**  
    `DataProvider` 协议把数据源和 Agent 解耦，默认 SQLite 种子库，也可以接 MySQL、ERP API 或 CSV。
 
-8. **安全边界清楚**  
-   前端永远不直连模型 API；DeepSeek Key 只放在 Python 层 `backend/.env`，所有 AI 请求走 FastAPI。
+8. **会话可恢复、安全边界清楚**  
+   LangGraph `SqliteSaver` 按 `thread_id` 持久化检查点，刷新或重启后继续会话；前端永远不直连模型 API，DeepSeek Key 只放在 Python 层 `backend/.env`。
 
-![图 3：对话查订单，Agent 步骤卡展示工具调用](submission-assets/03-chat-order.png)
+![图 3：查订单，订单卡与 Agent 步骤卡展示工具调用](submission-assets/03-order.png)
 
-![图 4：009 订单退款校验，红字提示超过 7 天售后期](submission-assets/04-refund-gate.png)
+![图 4：退款校验，预览金额与剩余额度，等待客户确认](submission-assets/04-refund.png)
 
 ## 三、AI 测试技术落地使用情况概述
 
@@ -71,8 +71,8 @@ npm run dev
 | 测试层 | 内容 | 结果 |
 |---|---|---|
 | 静态检查 | `tsc`、`eslint`、`next build` | 全部通过 |
-| 接口冒烟 | 7 个接口 + 4 个页面，双服务联调 | **11/11 通过** |
-| API 契约 | 会话、退款、知识库、意图等接口 | **12/12 通过** |
+| 接口冒烟 | 7 个接口 + 2 个页面，双服务联调 | **9/9 通过** |
+| 功能回归 | 意图 4 路、引用 `[1]`、SqliteSaver 落盘、追问不误伤 | 通过 |
 | RAG 检索自测 | 10 个查询，top-3 命中 | **9/10 = 90%** |
 | RAG 效果评测 v1 | 20 题、40 分制、有/无 RAG 对照 | **26 vs 23** |
 | RAG 效果评测 v2 | 15 题、30 分制、有/无 RAG 对照 | **29 vs 30** |
@@ -81,11 +81,12 @@ v2 的结果没有刻意美化：通用常识题上，不带 RAG 的模型本身
 
 另外还覆盖了：
 
-- 意图分类：5 类意图 + 关键词兜底；LLM 超时/失败时降级为 `general`，不阻断对话。
-- Agent 工具调用：`order_lookup`、`data_query`、`refund_flow validate/execute` 等。
+- 意图路由：4 类意图 + 5 类情绪标签；LLM 失败或非法输出时降级为 `clarify`，先追问再分流，不阻断对话。
+- Agent 工具调用：`product_lookup`、`order_lookup`、`kb_search`、`refund_flow validate/execute` 等。
 - 退款门控：校验失败、重复提交、幂等执行。
+- 终审防幻觉：无工具证据拒答、有命中但缺 `[n]` 告警、追问式回复不误伤。
 - 缺 Key / 缺知识库 / 上游 503 的降级路径。
-- 会话持久化、引用角标与 `/v1/rag/search` 同源核对。
+- 会话持久化（SqliteSaver 跨实例读取）、引用角标与 `/v1/rag/search` 同源核对。
 
 测试脚本可复现：
 
@@ -96,17 +97,18 @@ python -m backend.app.rag.eval
 python -m backend.app.rag.eval_v2
 ```
 
-![图 5：RAG 回答与来源卡，角标可回查原文](submission-assets/05-rag-citation.png)
+![图 5：投诉升级，生成工单号、类别与紧急度](submission-assets/05-escalation.png)
 
 ## 四、项目中涉及的关键技术
 
-- **前端**：Next.js 16 App Router、TypeScript strict、Tailwind CSS、Vercel AI SDK、SSE 流式渲染。
+- **前端**：Next.js 16 App Router、TypeScript strict、Tailwind CSS、SSE 流式渲染（自研 `agentRun` 解析 step / delta / done 事件）。
 - **后端**：Python 3.12、FastAPI、httpx、SQLite、Pydantic。
 - **RAG**：jieba BM25 + fastembed BGE-small-zh 向量 + LanceDB + RRF 融合；top-4 检索；引用角标与 `/v1/rag/search` 同源。
-- **Agent**：DeepSeek function calling + 手写 ReAct 循环，最多 5 步；10 个工具；SSE 事件 `step/delta/done/error`。
-- **MCP**：FastMCP stdio 独立进程，复用 Agent 工具。
+- **Agent**：LangGraph 0.2.8 StateGraph（Router→售前/售后/投诉→终审）+ DeepSeek function calling；specialist 内最多 5 步；8 个主链路工具 + 4 个 MCP 工具；SSE 事件 `step/delta/done/error`。
+- **记忆**：`langgraph-checkpoint-sqlite` 的 SqliteSaver，`thread_id` 与前端会话 ID 全链路一致。
+- **MCP**：FastMCP stdio 独立进程，复用 Agent 工具注册表。
 - **安全**：前端不直连模型；Key 只在 Python 层；同源 `/api/*` 代理；`.env` 不入库。
-- **测试**：`smoke.mjs`、Pytest 风格接口脚本、RAG selftest、v1/v2 评测集、意图分类用例。
+- **测试**：`smoke.mjs`、RAG selftest、v1/v2 评测集、意图与门控回归脚本。
 
 ![图 6：知识库切片编辑，保存后即时生效](submission-assets/06-kb.png)
 
@@ -114,11 +116,11 @@ python -m backend.app.rag.eval_v2
 
 本文档使用 6 张真实运行截图：
 
-1. 工作台：4 张 KPI 卡与待办（图 1）。
-2. 数据页：订单表与状态筛选（图 2）。
-3. 对话：查订单与 Agent 步骤卡（图 3）。
-4. 退款：009 订单“超过 7 天售后期”红字拦截（图 4）。
-5. RAG：回答与 `[1]` 来源卡（图 5）。
+1. 客服对话首页：四张客户场景卡与输入区（图 1）。
+2. 售前咨询：Agent 推荐商品，回答带 `[1]` 引用（图 2）。
+3. 查订单：订单卡与「order_lookup」步骤卡（图 3）。
+4. 退款门控：校验预览、金额与剩余额度（图 4）。
+5. 投诉升级：工单号、类别、紧急度（图 5）。
 6. 知识库：切片编辑与即时生效（图 6）。
 
 截图均来自本地演示数据，不含真实客户信息、API Key 或 `.env` 内容。

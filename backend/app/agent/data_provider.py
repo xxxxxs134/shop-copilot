@@ -174,6 +174,7 @@ def _refund_preview(order: dict, amount: float) -> dict:
     return {
         "order_id": order.get("order_id"),
         "amount": round(amount, 2),
+        "paid_amount": round(float(order.get("amount") or 0), 2),
         "item": item,
         "after_amount": round(float(order.get("amount") or 0) - amount, 2),
     }

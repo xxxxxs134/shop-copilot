@@ -6,8 +6,8 @@ P5 新增（docs/plan-p5.md §3.3）：product_lookup / order_lookup / refund_fl
 咨询即办理新增：modify_address / intercept_logistics / return_exchange
   （同一两段式模式：改订单地址 / 拦截物流 / 生成退换货单据）
 
-每个工具 = 一个 Tool 实例，注册到 REGISTRY。loop.py 通过 list_schemas() 生成
-OpenAI function calling 的 tools 数组，用 name 分发调用。
+每个工具 = 一个 Tool 实例，注册到 REGISTRY。graph.py 的 _run_react 通过
+list_schemas() 生成 OpenAI function calling 的 tools 数组，用 name 分发调用。
 """
 
 from __future__ import annotations
@@ -226,7 +226,9 @@ register(Tool(
     name="refund_flow",
     description=(
         "两段式退款（必须先 validate 再 execute）："
-        "action='validate' 后端校验订单并返回 {token, preview}，把 preview 复述给用户问「确认退款吗？」；"
+        "action='validate' 后端校验订单并返回 {token, preview}，preview 字段含义固定："
+        "amount=本次退款金额、paid_amount=订单实付金额、after_amount=退款后剩余可退金额；"
+        "把 preview 复述给用户问「确认退款吗？」，复述时不得混用这三个字段；"
         "用户确认后 action='execute' 携带 token 执行退款并返回回执。"
         "校验不过返回 {ok:false, violations}，请原样转述；重复 execute 返回幂等「已退款」回执。"
     ),

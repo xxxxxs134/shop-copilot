@@ -530,7 +530,7 @@ export default function KbPage() {
               className="mb-2 inline-flex items-center gap-1 text-xs text-ink-subtle transition-colors hover:text-brand-600"
             >
               <ArrowLeftIcon className="h-3.5 w-3.5" />
-              返回工作台
+              返回客服对话
             </Link>
             <PageHeader
               title="知识库"

@@ -1,22 +1,17 @@
 /**
- * 意图识别客户端（P5 §2.1 / §2.2）
+ * 意图信息类型（P5 §2.1 / §2.2 契约的类型层）。
  *
- * 契约（docs/plan-p5.md §2.1）：
- *   POST /api/v1/intent   {"q": "用户问题"}
- *   → {"intent": "knowledge|data|policy|copywriting|general",
- *      "target": "rag|agent",
- *      "reason": "一句话理由（供 chip 展示）",
- *      "entities": {"order_id": "SO2026…", …},          // 可选增强
- *      "sentiment": {"label": "anxious", …}              // 可选增强}
+ * 历史：本文件曾含 fetchIntent() 并行调用 /api/v1/intent。
+ * 意图二合一后，前端改从 agent SSE 的 done 事件 router 字段取意图
+ * （见 components/ChatWindow.tsx buildIntentInfo），fetchIntent 已删除。
+ * smoke.mjs 仍直测 POST /v1/intent（后端 api_intent.py 保留）。
  *
- * 走既有 /api/v1/* 同源代理（app/api/v1/[...path]/route.ts 透传 → FastAPI /v1/intent），
- * 本文件不新增任何代理代码。
- *
- * 失败语义：网络错误 / 非 200 / 非 JSON / 字段缺失一律返回 null ——
- * 意图识别只是增强信息，绝不允许它阻断或拖垮发送主链路（调用方按 null 跳过 chip 与自动路由）。
+ * 这里只保留消息上持久化/展示所需的类型：
+ *   IntentResponse —— /v1/intent 原始响应三字段契约
+ *   IntentInfo     —— 消息意图字段（IntentResponse + switched 标记）
+ *   Sentiment      —— 情绪识别结果
+ *   EntityMap      —— 实体抽取结果
  */
-
-import type { UIMessage } from 'ai';
 
 /** /v1/intent 原始响应（三字段契约 + 可选增强字段） */
 export interface IntentResponse {
@@ -47,88 +42,4 @@ export interface Sentiment {
  */
 export interface IntentInfo extends IntentResponse {
   switched?: boolean;
-}
-
-/**
- * RAG 模式 UIMessage 的意图扩展。
- * AI SDK 的 UIMessage 无 `intent` 字段，用交叉类型读写，避免 as any。
- */
-export type IntentUIMessage = UIMessage & { intent?: IntentInfo };
-
-/**
- * §2.2 非对称路由表：仅这三类意图在 RAG 模式下自动切到 Agent。
- * knowledge / general 留在 RAG；Agent 模式一律不回切（调用方不判路由）。
- */
-const AUTO_SWITCH_INTENTS: ReadonlySet<string> = new Set(['data', 'policy', 'copywriting']);
-
-/** 当前处于 RAG 模式时，该意图是否需要自动切到 Agent（§2.2 路由表） */
-export function shouldAutoSwitch(intent: string): boolean {
-  return AUTO_SWITCH_INTENTS.has(intent);
-}
-
-/** 响应体校验：三个字段必须均为 string，否则视为识别失败；entities/sentiment 为可选增强，解析失败仅丢弃该字段 */
-function parseIntent(data: unknown): IntentResponse | null {
-  if (typeof data !== 'object' || data === null) return null;
-  const d = data as Record<string, unknown>;
-  if (
-    typeof d.intent !== 'string' ||
-    typeof d.target !== 'string' ||
-    typeof d.reason !== 'string'
-  ) {
-    return null;
-  }
-  return {
-    intent: d.intent,
-    target: d.target,
-    reason: d.reason,
-    entities: parseEntities(d.entities),
-    sentiment: parseSentiment(d.sentiment),
-  };
-}
-
-/** entities 解析：Record<string, string | number>，非此形状的整体丢弃（不阻断意图主字段） */
-function parseEntities(raw: unknown): EntityMap | undefined {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
-  const out: EntityMap = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === 'string' || typeof value === 'number') out[key] = value;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
-/** sentiment 解析：{ label: string; score: number; cues: string[] }，非此形状的整体丢弃 */
-function parseSentiment(raw: unknown): Sentiment | undefined {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
-  const s = raw as Record<string, unknown>;
-  if (typeof s.label !== 'string' || typeof s.score !== 'number') return undefined;
-  const cues = Array.isArray(s.cues) ? s.cues.filter((c): c is string => typeof c === 'string') : [];
-  return { label: s.label, score: s.score, cues };
-}
-
-/** 超时兜底：后端契约目标 <1.5s，5s 仍未返回按失败处理（不拖住发送链路） */
-const INTENT_TIMEOUT_MS = 5000;
-
-/**
- * 识别单条问题的意图。**永不抛出**：任何失败路径都返回 null。
- *
- * 与回答请求并行发起（不 await 在 sendMessage 之前），故不阻塞首 token。
- */
-export async function fetchIntent(q: string): Promise<IntentResponse | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), INTENT_TIMEOUT_MS);
-  try {
-    const res = await fetch('/api/v1/intent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q }),
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-    if (!res.ok) return null;
-    return parseIntent(await res.json());
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
 }

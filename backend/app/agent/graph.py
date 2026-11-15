@@ -21,10 +21,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sqlite3
 from datetime import datetime
+from pathlib import Path
 from typing import Any, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from . import router as router_mod
@@ -33,7 +35,13 @@ from .tools import REGISTRY
 
 logger = logging.getLogger("shop-copilot.agent.graph")
 
+# 持久化检查点：跨重启保留多轮记忆（data/checkpoints.db，不入库）
+_CHECKPOINT_DB = Path(__file__).resolve().parents[3] / "data" / "checkpoints.db"
+
 MAX_STEPS = 5
+# 单条工具结果进上下文的字符上限：中文 1 字 ≈ 1-2 token，4000 字 ≈ 4-8k token，
+# 足够覆盖订单详情/商品列表；真实大库（如全量订单）超限截断，防撑爆上下文。
+TOOL_RESULT_MAX_CHARS = 4000
 
 
 # ── 状态 ──────────────────────────────────────────────
@@ -43,6 +51,7 @@ class AgentState(TypedDict):
     messages: list[dict]
     intent: str            # presales / aftersales / escalation / clarify
     confidence: float
+    router_sentiment: dict | None  # 情绪 {label,score,cues}（前端 chip/共情 banner 用）
     draft: str             # specialist 草稿
     evidence: list[dict]   # 工具证据（传给终审，防幻觉）
     kb_hits: list[dict]    # 知识库命中（供 [n] 引用溯源）
@@ -70,14 +79,17 @@ AFTERSALES_TOOLS = _tools(
 PRESALES_SYSTEM = """你是电商店铺的售前客服，接待的是准备下单的客户。
 职责：介绍商品、回答价格/规格/库存/发货时间、根据客户需求推荐合适商品。
 - 先用工具查商品/库存/知识库，再回答，不要凭空编造商品信息
+- 需要客户提供更多条件（预算、用途、具体款式）时直接追问，此时无需调用工具
 - 推荐时给出 1-3 个选项，并说明推荐理由（贴合客户说的需求）
 - 用简洁、亲切的中文，不要暴露任何内部技术细节"""
 
 AFTERSALES_SYSTEM = """你是电商店铺的售后客服，接待的是已下单或有售后问题的客户。
 职责：查订单/物流、处理退款退货、解答售后政策、安抚情绪。
 - 先用工具查订单/政策，再回答，涉及具体数字要准确
+- 客户没给订单号时直接追问（此时无需调用工具），拿到订单号后再查
 - 客户情绪激动时先安抚一句，再给解决方案
 - 涉及退款/改址等操作时，说明需要客户确认后才能执行
+- refund_flow 返回的 preview 字段含义：amount=本次退款金额，paid_amount=订单实付金额，after_amount=退款后剩余可退金额；复述时严格按字段名对应，严禁把 after_amount 说成实付金额
 - 用简洁、温和的中文，不要暴露任何内部技术细节"""
 
 ESCALATION_PROMPT = """你是电商客服的投诉升级处理专员。客户的问题需要转接人工客服处理。
@@ -89,18 +101,28 @@ REVIEW_SYSTEM = """你是客服回复的终审员。根据客服草稿和工具�
 1. 只保留有工具证据支持的信息，草稿里没有证据支撑的猜测一律删除
 2. 如果提供了知识库证据（[1][2]...），回答中涉及这些内容时用 [n] 角标标注来源，客户可点开核对
 3. 语气统一为亲切、专业的中文客服口吻
-4. 直接输出最终回复，不要任何前缀或解释"""
+4. 草稿中的金额/单号/库存/物流数字必须与工具证据一致；若草稿自相矛盾，以工具证据为准并改正
+5. 直接输出最终回复，不要任何前缀或解释"""
 
 
 # ── 节点 ──────────────────────────────────────────────
 
 async def intent_router(state: AgentState) -> dict:
-    """意图路由：售前 / 售后 / 投诉升级 / 澄清。"""
-    intent, confidence = await router_mod.classify(state["messages"])
+    """意图路由：售前 / 售后 / 投诉升级 / 澄清；同一次调用顺带产出情绪（前端 chip 单一真相源）。"""
+    intent, confidence, sentiment = await router_mod.classify(state["messages"])
+    detail = f"置信度 {confidence:.2f}"
+    if sentiment:
+        detail += f" · 情绪{sentiment['label']}"
     return {
         "intent": intent,
         "confidence": confidence,
-        "thought_chain": [_thought("router", state["messages"][-1].get("content", ""), intent, f"置信度 {confidence:.2f}")],
+        "router_sentiment": sentiment,
+        # 每轮重置轮次内状态：否则 Checkpointer 会把上一轮工单/证据带进本轮终审
+        "escalation_ticket": None,
+        "draft": "",
+        "evidence": [],
+        "kb_hits": [],
+        "thought_chain": [_thought("router", state["messages"][-1].get("content", ""), intent, detail)],
     }
 
 
@@ -155,7 +177,13 @@ async def _run_react(messages: list[dict], tools: list[Any], system: str) -> tup
                 result = json.dumps({"error": f"未知工具: {name}"}, ensure_ascii=False)
             # 600 字：终审要看全关键数字（退款回执/库存/运单），200 会截断
             evidence.append({"tool": name, "args": args, "result": result[:600]})
-            msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": result})
+            # token 预算：超限截断并标注，防真实大库撑爆上下文
+            content = (
+                result
+                if len(result) <= TOOL_RESULT_MAX_CHARS
+                else result[:TOOL_RESULT_MAX_CHARS] + "\n…(结果过长已截断，需要可按条件精查)"
+            )
+            msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": content})
     return "", evidence, kb_hits
 
 
@@ -165,7 +193,7 @@ async def presales_node(state: AgentState) -> dict:
         "draft": text,
         "evidence": evidence,
         "kb_hits": kb_hits,
-        "thought_chain": [*state.get("thought_chain", []), _thought("presales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("presales", state["messages"][-1].get("content", ""), text[:200], f"调用 {len(evidence)} 次工具")],
     }
 
 
@@ -175,7 +203,7 @@ async def aftersales_node(state: AgentState) -> dict:
         "draft": text,
         "evidence": evidence,
         "kb_hits": kb_hits,
-        "thought_chain": [*state.get("thought_chain", []), _thought("aftersales", state["messages"][-1].get("content", ""), text[:80], f"调用 {len(evidence)} 次工具")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("aftersales", state["messages"][-1].get("content", ""), text[:200], f"调用 {len(evidence)} 次工具")],
     }
 
 
@@ -222,18 +250,28 @@ async def review_node(state: AgentState) -> dict:
         final = (final or "您的问题已受理，我们会尽快处理。").strip()
         return {
             "final": final,
-            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:80], "终审完成（工单）")],
+            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:200], "终审完成（工单）")],
         }
 
     evidence = state.get("evidence", [])
     kb_hits = state.get("kb_hits", [])
 
-    # 硬校验①：specialist 一个工具都没调 → 它在凭模型知识编造，强制拒答
+    # 硬校验①：没调工具时，只放行「追问式」回复（缺订单号就问，不许编事实）
     if not evidence and not kb_hits:
+        draft = (state.get("draft") or "").strip()
+        _ASK_MARKERS = ("？", "?", "请提供", "请问", "麻烦", "需要您", "请告诉", "方便", "请先")
+        is_clarify = bool(draft) and any(k in draft for k in _ASK_MARKERS)
+        if is_clarify:
+            # 追问不含事实断言，无需终审过滤，直接采用
+            return {
+                "final": draft,
+                "thought_chain": [*state.get("thought_chain", []), _thought("review", draft[:200], draft[:200], "无工具，追问式回复")],
+            }
+        # 无证据又不是追问 → 它在凭模型知识编造，强制拒答
         final = "抱歉，这个问题我暂时没有查到确切信息，建议您联系人工客服进一步确认。"
         return {
             "final": final,
-            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:80], "无工具证据，拒答")],
+            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:200], "无工具且非追问，拒答")],
         }
 
     evidence_block = "\n".join(
@@ -258,7 +296,7 @@ async def review_node(state: AgentState) -> dict:
     final = (final or state.get("draft") or "抱歉，我暂时无法回答，请稍后再试。").strip()
     return {
         "final": final,
-        "thought_chain": [*state.get("thought_chain", []), _thought("review", (state.get("draft") or "")[:80], final[:80], "终审完成")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("review", (state.get("draft") or "")[:200], final[:200], "终审完成")],
     }
 
 
@@ -269,6 +307,30 @@ def _route(state: AgentState) -> str:
 
 
 # ── 构建 ─────────────────────────────────────────────
+
+class _AsyncSqliteCheckpointer(SqliteSaver):
+    """SqliteSaver 的异步适配层。
+
+    官方 SqliteSaver 的 async 方法直接 NotImplementedError（要求改用 AsyncSqliteSaver），
+    而 AsyncSqliteSaver 构造需要运行中的事件循环、无法在模块级同步创建。
+    这里把 async 方法经 asyncio.to_thread 代理到同步实现——既能落盘，又不阻塞事件循环。
+    """
+
+    async def aget(self, *args, **kwargs):
+        return await asyncio.to_thread(super().get, *args, **kwargs)
+
+    async def aget_tuple(self, *args, **kwargs):
+        return await asyncio.to_thread(super().get_tuple, *args, **kwargs)
+
+    async def alist(self, *args, **kwargs):
+        return await asyncio.to_thread(super().list, *args, **kwargs)
+
+    async def aput(self, *args, **kwargs):
+        return await asyncio.to_thread(super().put, *args, **kwargs)
+
+    async def aput_writes(self, *args, **kwargs):
+        return await asyncio.to_thread(super().put_writes, *args, **kwargs)
+
 
 def build_graph():
     builder = StateGraph(AgentState)
@@ -291,21 +353,33 @@ def build_graph():
     builder.add_edge("escalation", "review")
     builder.add_edge("clarify", END)
     builder.add_edge("review", END)
-    return builder.compile(checkpointer=MemorySaver())
+    # SqliteSaver 持久化：状态落盘，重启不丢（async 方法经 _AsyncSqliteCheckpointer 适配）
+    _CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_CHECKPOINT_DB), check_same_thread=False)
+    return builder.compile(checkpointer=_AsyncSqliteCheckpointer(conn))
 
 
 _graph = build_graph()
 
 
-async def run_customer_agent(history: list[dict], user_text: str, thread_id: str = "default") -> tuple[str, list[dict], list[dict]]:
-    """对外入口：跑图，返回 (最终回复, 思考链, 知识库命中)。
+async def run_customer_agent(history: list[dict], user_text: str, thread_id: str = "default") -> dict:
+    """对外入口：跑图，返回 {final, thought_chain, kb_hits, router}。
 
     thread_id 用于 Checkpointer 多轮状态持久化（记忆系统基础）。
-    同一 thread_id 跨轮次共享图状态，支持未来 interrupt()/resume（退款 HITL）。
+    router 携带意图+情绪，前端 chip 与实际路由同源，杜绝标签打架。
     """
     config = {"configurable": {"thread_id": thread_id}}
     result = await _graph.ainvoke(
         {"messages": [*history, {"role": "user", "content": user_text}]},
         config=config,
     )
-    return result.get("final", ""), result.get("thought_chain", []), result.get("kb_hits", [])
+    return {
+        "final": result.get("final", ""),
+        "thought_chain": result.get("thought_chain", []),
+        "kb_hits": result.get("kb_hits", []),
+        "router": {
+            "intent": result.get("intent", ""),
+            "confidence": result.get("confidence", 0.0),
+            "sentiment": result.get("router_sentiment"),
+        },
+    }

@@ -322,12 +322,13 @@ async def agent_chat(request: Request):
 
     async def event_stream():
         try:
-            final, thought_chain, kb_hits = await run_customer_agent(history, user_text, thread_id)
-            # 简易流式：按字符块发 delta（前端 agentRun 兼容）；思考链 + 知识库命中随 done 下发
+            out = await run_customer_agent(history, user_text, thread_id)
+            final = out["final"]
+            # 简易流式：按字符块发 delta（前端 agentRun 兼容）；思考链/知识库/路由随 done 下发
             chunk_size = 8
             for i in range(0, len(final), chunk_size):
                 yield f"data: {json.dumps({'type': 'delta', 'text': final[i : i + chunk_size]}, ensure_ascii=False)}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'citations': [], 'thought_chain': thought_chain, 'kb_hits': kb_hits}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'citations': [], 'thought_chain': out['thought_chain'], 'kb_hits': out['kb_hits'], 'router': out['router']}, ensure_ascii=False)}\n\n"
         except ProblemException as exc:
             err = {
                 "type": "error",

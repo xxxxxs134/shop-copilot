@@ -6,7 +6,7 @@
  */
 
 import { streamAgent } from './agentClient';
-import type { ThoughtStep } from './agentClient';
+import type { RouterInfo, ThoughtStep } from './agentClient';
 import type { AgentStep } from '@/components/AgentSteps';
 
 export interface AgentRunState {
@@ -14,6 +14,8 @@ export interface AgentRunState {
   steps: AgentStep[];
   thoughtChain: ThoughtStep[];
   kbHits: Array<{ title: string; category: string; text: string }>;
+  /** 路由意图+情绪（done 时到达，前端回填到 user 消息 chip） */
+  routerInfo?: RouterInfo;
 }
 
 /**
@@ -36,6 +38,7 @@ export async function runAgentStream(
   let steps: AgentStep[] = [];
   let thoughtChain: ThoughtStep[] = [];
   let kbHits: Array<{ title: string; category: string; text: string }> = [];
+  let routerInfo: RouterInfo | undefined;
   let counter = 0;
   // 记录每个步骤的开始时刻，step_result 到达时算出耗时
   const stepStartedAt = new Map<string, number>();
@@ -46,7 +49,7 @@ export async function runAgentStream(
         const id = `step-${counter++}`;
         stepStartedAt.set(id, Date.now());
         steps = [...steps, { id, tool: evt.tool, args: evt.args, done: false }];
-        onUpdate({ text, steps, thoughtChain, kbHits });
+        onUpdate({ text, steps, thoughtChain, kbHits, routerInfo });
       } else if (evt.type === 'step_result') {
         const next = [...steps];
         for (let i = next.length - 1; i >= 0; i--) {
@@ -62,19 +65,20 @@ export async function runAgentStream(
           }
         }
         steps = next;
-        onUpdate({ text, steps, thoughtChain, kbHits });
+        onUpdate({ text, steps, thoughtChain, kbHits, routerInfo });
       } else if (evt.type === 'delta') {
         text += evt.text;
-        onUpdate({ text, steps, thoughtChain, kbHits });
+        onUpdate({ text, steps, thoughtChain, kbHits, routerInfo });
       } else if (evt.type === 'error') {
         onError(evt.message);
         break;
       }
       if (evt.type === 'done') {
-        // 后端随 done 下发完整思考链 + 知识库命中（[n] 引用溯源用）
+        // 后端随 done 下发完整思考链 + 知识库命中 + 路由意图
         thoughtChain = evt.thought_chain ?? [];
         kbHits = evt.kb_hits ?? [];
-        onUpdate({ text, steps, thoughtChain, kbHits });
+        routerInfo = evt.router;
+        onUpdate({ text, steps, thoughtChain, kbHits, routerInfo });
         break;
       }
     }

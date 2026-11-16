@@ -176,7 +176,7 @@ lib/
   cn.ts                 # className 合并（零依赖）
   status.ts             # 订单状态元数据（文案 + 色调）
 scripts/
-  smoke.mjs             # 交付冒烟：9 项接口/页面检查，任一失败退出码 1
+  smoke.mjs             # 交付冒烟：10 项接口/页面检查，任一失败退出码 1
 docs/
   positioning.md        # 产品定位唯一真源（README / 演示 / 场景库都以此为准）
   demo-path.md          # 5 分钟演示路径（含种子订单核对 SQL）
@@ -198,7 +198,7 @@ python -m backend.app.rag.pipeline build   # 索引构建（C8）
 python -m backend.app.rag.selftest         # 检索质量 ≥80%（C9，当前 90%）
 python -m backend.app.rag.eval             # 开/关 RAG 对比（C10）
 npx tsc --noEmit && npm run lint && npm run build  # 前端全绿
-node scripts/smoke.mjs                     # 交付冒烟 9 项（双服务启动后跑）
+node scripts/smoke.mjs                     # 交付冒烟 10 项（双服务启动后跑）
 ```
 
 MCP Inspector 测试：

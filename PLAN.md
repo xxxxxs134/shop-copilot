@@ -229,6 +229,6 @@ npx tsc --noEmit && npm run lint && npm run build && git status
 ## 6. 交付状态（2026-10-28 收尾）
 
 - **唯一人工项**：`README.md`「团队信息」需填真实姓名 / 学校 / 专业（当前保留「待填」）。除此之外没有需要人工补充的内容。
-- **已核验事实**：43 篇语料 / 12 段场景 / 20 单种子订单 / 2 个入口（`/chat`、`/kb`，另有 `/` 重定向）；`tsc=0`、`build=0`、`node scripts/smoke.mjs` 9/9。
+- **已核验事实**：43 篇语料 / 12 段场景 / 20 单种子订单 / 3 个页面（`/chat`、`/kb`、`/overview`，另有 `/` 重定向）；`tsc=0`、`build=0`、`node scripts/smoke.mjs` 10/10。
 - **交付物备注**：`docs/tech-doc.pdf` 已重导为 v1.1（2026-10-28，10 页），正文含「43 篇」口径；旧版备份在 `.omo/qa/tech-doc-v1-20261024.pdf`。
 - **版本控制**：本轮全部改动仍在工作区，按用户要求未提交（`git status` 见交付报告）。

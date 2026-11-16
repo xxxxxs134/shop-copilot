@@ -5,7 +5,7 @@
  * 检查：
  *   API  : /health、/v1/workspace/summary、/v1/data/{orders,products,aftersales}、
  *          /v1/kb/docs、POST /v1/intent
- *   Pages: /chat、/kb（200 + text/html）
+ *   Pages: /chat、/kb、/overview（200 + text/html）
  *
  * 用法：
  *   node scripts/smoke.mjs
@@ -228,7 +228,7 @@ await check("POST /v1/intent", async () => {
   assert(intent.length > 0, "intent 为空");
 });
 
-for (const path of ["/chat", "/kb"]) {
+for (const path of ["/chat", "/kb", "/overview"]) {
   await check(`GET ${path}`, () => getHtml(path));
 }
 

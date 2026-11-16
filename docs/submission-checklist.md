@@ -33,7 +33,7 @@ npm run build
 node scripts/smoke.mjs
 ```
 - [ ] 前三条退出码 0
-- [ ] smoke **9/9 PASS**，退出码 0（需 3000 + 8000 已启动）
+- [ ] smoke **10/10 PASS**，退出码 0（需 3000 + 8000 已启动）
 
 ## 3. 文档事实一致性（2 min）
 

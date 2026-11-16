@@ -20,6 +20,7 @@ import { ragSearch, type AgentMessage, type CitationSource } from '@/lib/session
 import type { IntentInfo } from '@/lib/intentClient';
 import type { RouterInfo } from '@/lib/agentClient';
 import { parseProblem, problemMessage } from '@/lib/errors';
+import { cn } from '@/lib/cn';
 
 /** SpeechRecognition 最小接口（浏览器 API 无官方 TS 类型） */
 interface SpeechRecognitionLike {
@@ -473,6 +474,7 @@ export function ChatWindow() {
         onCreate={() => void sessions.newSession()}
         onRename={(id, title) => void sessions.renameSession(id, title)}
         onDelete={(id) => void sessions.removeSession(id)}
+        onQuickStart={runDemo}
       />
 
       {/* 主聊天列 */}
@@ -530,7 +532,12 @@ export function ChatWindow() {
             onScroll={handleScroll}
             className="min-h-0 flex-1 overflow-y-auto"
           >
-            <div className="mx-auto w-full max-w-3xl space-y-4 break-words px-4 py-6">
+            <div
+              className={cn(
+                'mx-auto w-full space-y-4 break-words px-4 py-6',
+                conversationEmpty ? 'max-w-5xl' : 'max-w-3xl',
+              )}
+            >
               {/* 空状态：演示向导（价值主张 + 3 分钟路线 + 能力卡片） */}
               {conversationEmpty && <DemoGuide onRun={runDemo} busy={busy} />}
               {/* 消息列表 */}

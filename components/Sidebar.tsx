@@ -6,6 +6,18 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import type { SessionId, SessionMeta, SessionMode } from '@/lib/sessionsClient';
 
+/** 空状态快捷演示：按钮文案 / 可直接发送的问题 */
+interface QuickStart {
+  readonly label: string;
+  readonly prompt: string;
+}
+
+const QUICK_STARTS: readonly QuickStart[] = [
+  { label: '查订单', prompt: 'SO20261027009 到哪了？' },
+  { label: '办退款', prompt: '订单 SO20261027001，帮我退 80 块' },
+  { label: '投诉建单', prompt: '等了一周还没到，太失望了，我要投诉！' },
+];
+
 /**
  * 会话侧边栏（展开 240px / 折叠 56px）
  *
@@ -24,6 +36,7 @@ export function Sidebar({
   onCreate,
   onRename,
   onDelete,
+  onQuickStart,
 }: {
   sessions: SessionMeta[];
   activeId: SessionId | null;
@@ -36,6 +49,8 @@ export function Sidebar({
   onCreate: () => void;
   onRename: (id: SessionId, title: string) => void;
   onDelete: (id: SessionId) => void;
+  /** 可选：空状态快捷演示（未提供时不渲染快捷问题） */
+  onQuickStart?: (question: string) => void;
 }) {
   const [editingId, setEditingId] = useState<SessionId | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -112,9 +127,41 @@ export function Sidebar({
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
-          {sessions.length === 0 && (
-            <p className="px-2 py-6 text-center text-xs text-ink-subtle">暂无会话</p>
-          )}
+          {sessions.length === 0 &&
+            (onQuickStart ? (
+              <div className="px-1 py-2">
+                <p className="text-sm font-semibold text-ink">还没有会话</p>
+                <p className="mt-1 text-xs leading-relaxed text-ink-subtle">
+                  点上方新建，或从一条演示问题开始。
+                </p>
+                <div className="mt-2.5 space-y-1.5">
+                  {QUICK_STARTS.map((q, i) => (
+                    <Button
+                      key={q.label}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onQuickStart(q.prompt)}
+                      disabled={busy}
+                      aria-label={`演示问题：${q.label}`}
+                      className="w-full justify-start gap-2"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[10px] font-semibold text-brand-600"
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 truncate text-left">{q.label}</span>
+                      <span aria-hidden="true" className="text-ink-subtle">
+                        →
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="px-2 py-6 text-center text-xs text-ink-subtle">暂无会话</p>
+            ))}
           {sessions.map((s) => {
             const active = s.id === activeId;
             const editing = editingId === s.id;

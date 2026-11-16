@@ -65,7 +65,7 @@ uvicorn backend.app.main:app --port 8000
 npm run dev
 </code></pre>
 <p>打开 <code>http://localhost:3000</code>（<code>/</code> 自动跳 <code>/chat</code>），按"客服对话 → 售前咨询 → 查订单 → 退款门控 → 投诉升级 → 知识库编辑"的顺序即可完成演示。</p>
-<p><img alt="图 1：客服对话首页与四张客户场景卡" src="submission-assets/01-chat-home.png"></p>
+<p><img alt="图 1：客服对话首页与 3 分钟演示路线" src="submission-assets/01-chat-home.png"></p>
 <p><img alt="图 2：售前咨询，Agent 推荐商品并带 [1] 引用" src="submission-assets/02-presales.png"></p>
 <h2>二、项目亮点</h2>
 <ol>
@@ -83,7 +83,7 @@ npm run dev
 </li>
 <li>
 <p><strong>Agent 过程透明</strong><br>
-   LangGraph 编排，每个 specialist 内部最多 5 步工具调用；每次调用都以步骤卡展示"调了什么工具、返回什么"。主链路 8 个工具（售前 2 + 售后 6），另有 4 个 MCP 工具。</p>
+   LangGraph 编排，每个 specialist 内部最多 5 步工具调用；「多 Agent 处理过程」面板把专家接手、handoff、工具名与关键返回字段、终审裁决逐步摊开。主链路 8 个工具（售前 2 + 售后 6），另有 4 个 MCP 工具。</p>
 </li>
 <li>
 <p><strong>敏感操作两段式门控</strong><br>
@@ -102,7 +102,7 @@ npm run dev
    LangGraph <code>SqliteSaver</code> 按 <code>thread_id</code> 持久化检查点，刷新或重启后继续会话；前端永远不直连模型 API，DeepSeek Key 只放在 Python 层 <code>backend/.env</code>。</p>
 </li>
 </ol>
-<p><img alt="图 3：查订单，订单卡与 Agent 步骤卡展示工具调用" src="submission-assets/03-order.png"></p>
+<p><img alt="图 3：查订单，订单卡与多 Agent 面板展示工具轨迹" src="submission-assets/03-order.png"></p>
 <p><img alt="图 4：退款校验，预览金额与剩余额度，等待客户确认" src="submission-assets/04-refund.png"></p>
 <h2>三、AI 测试技术落地使用情况概述</h2>
 <p>项目把 AI 能力拆成可复现的测试对象，不只靠人工点页面：</p>
@@ -179,9 +179,9 @@ python -m backend.app.rag.eval_v2
 <h2>五、项目相关的图片/照片</h2>
 <p>本文档使用 6 张真实运行截图：</p>
 <ol>
-<li>客服对话首页：四张客户场景卡与输入区（图 1）。</li>
+<li>客服对话首页：3 分钟演示路线、能力卡与输入区（图 1）。</li>
 <li>售前咨询：Agent 推荐商品，回答带 <code>[1]</code> 引用（图 2）。</li>
-<li>查订单：订单卡与「order_lookup」步骤卡（图 3）。</li>
+<li>查订单：订单卡与「order_lookup」工具轨迹（图 3）。</li>
 <li>退款门控：校验预览、金额与剩余额度（图 4）。</li>
 <li>投诉升级：工单号、类别、紧急度（图 5）。</li>
 <li>知识库：切片编辑与即时生效（图 6）。</li>

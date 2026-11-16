@@ -97,7 +97,7 @@ npm run dev                             # http://localhost:3000
 
 打开 http://localhost:3000（`/` 自动跳 `/chat`），左侧两个入口跨路由常驻，移动端收成顶部导航：
 
-- **客服对话 `/chat`**：LangGraph 多 Agent 编排。Router 自动判断售前/售后/投诉/澄清，售前查商品推荐、售后查订单退款；回答带 `[1][2]` 角标，**点击弹出来源卡片可溯源核对**；「Agent 处理过程」面板展示 router→specialist→review 每步留痕；会话栏支持新建/改名/两步确认删除（SQLite `data/app.db` 持久化）
+- **客服对话 `/chat`**：LangGraph 多 Agent 编排。Router 自动判断售前/售后/投诉/澄清，售前查商品推荐、售后查订单退款；回答带 `[1][2]` 角标，**点击弹出来源卡片可溯源核对**；「多 Agent 处理过程」面板展示 4 个专家花名册（命中高亮）、Router 意图、handoff 行、专家工具轨迹与终审裁决；会话栏支持新建/改名/两步确认删除（SQLite `data/app.db` 持久化）
 - **知识库 `/kb`**：43 篇文档的切片列表与行内编辑，商家维护商品知识/售后政策；保存即重新嵌入并失效旧检索；重建索引进度与耗时在 toast 里显示
 
 其他细节：**Markdown 渲染**（代码块/表格/列表/加粗，消息 hover 可复制、重新生成）；**多模态**（输入框旁 🖼️ 上传商品图 → GLM-4V 生成标题/卖点/描述；🎤 语音输入走浏览器 Web Speech API）。
@@ -110,7 +110,7 @@ npm run dev                             # http://localhost:3000
 2. **接数据源**：新建 `class MyShopProvider`（直连 MySQL/ERP API/CSV 均可），在 `get_provider()` 工厂里注册你的分支。
 3. **切环境变量**：`backend/.env` 设 `DATA_PROVIDER=mys`（默认 `sqlite` 真查种子库，`mock` 为兜底样例；种子库用 `python -m backend.app.agent.seed_store` 重建）。
 
-客服对话的查单、推荐、退款都会经由它取数，工具与步骤卡照常展示。
+客服对话的查单、推荐、退款都会经由它取数，工具轨迹照常展示。
 
 ## 项目结构
 
@@ -142,7 +142,7 @@ data/
   store.db              # 30 天经营数据（构建产物，不入库）
 app/
   page.tsx              # `/` → `/chat` 重定向
-  chat/page.tsx         # 客服对话（LangGraph 多 Agent + 思维链面板 + 场景卡）
+  chat/page.tsx         # 客服对话（LangGraph 多 Agent + 多 Agent 面板 + 演示导览）
   kb/page.tsx           # 知识库（切片编辑即生效）
   layout.tsx            # 全局壳：左导航 + 移动端顶部导航
   api/agent/route.ts    # Agent SSE 透传代理
@@ -153,7 +153,8 @@ components/
   MobileNav.tsx         # <md 顶部横向导航
   ChatWindow.tsx        # 聊天主窗口（会话状态机接入 + 引用溯源 + 语音/图片）
   Sidebar.tsx           # 对话页二级会话栏（新建/改名/两步确认删除/mode 徽章）
-  ScenarioCards.tsx     # 4 张场景卡（咨询商品 / 查订单 / 退款退货 / 投诉建议）
+  DemoGuide.tsx         # 空状态演示导览（3 分钟路线，点「开始」直接发送）
+  ScenarioCards.tsx     # 4 张能力卡（售前推荐 / 查订单 / 退款退货 / 投诉建议，点击直接发送）
   RefundDialog.tsx      # 退款门控弹窗（校验 → 确认 → 回执）
   ThoughtChain.tsx      # 多 Agent 处理过程面板（router→specialist→review 思维链）
   ui/                   # Button / Badge / Card / PageHeader / EmptyState / Skeleton / PageContainer

@@ -30,7 +30,7 @@ npm run dev
 
 打开 `http://localhost:3000`（`/` 自动跳 `/chat`），按"客服对话 → 售前咨询 → 查订单 → 退款门控 → 投诉升级 → 知识库编辑"的顺序即可完成演示。
 
-![图 1：客服对话首页与四张客户场景卡](submission-assets/01-chat-home.png)
+![图 1：客服对话首页与 3 分钟演示路线](submission-assets/01-chat-home.png)
 
 ![图 2：售前咨询，Agent 推荐商品并带 [1] 引用](submission-assets/02-presales.png)
 
@@ -46,7 +46,7 @@ npm run dev
    回答不是"模型凭印象说"，而是先检索知识库，再把命中的文档片段拼进上下文。点角标能看到标题、分类和原文片段。
 
 4. **Agent 过程透明**  
-   LangGraph 编排，每个 specialist 内部最多 5 步工具调用；每次调用都以步骤卡展示"调了什么工具、返回什么"。主链路 8 个工具（售前 2 + 售后 6），另有 4 个 MCP 工具。
+   LangGraph 编排，每个 specialist 内部最多 5 步工具调用；「多 Agent 处理过程」面板把专家接手、handoff、工具名与关键返回字段、终审裁决逐步摊开。主链路 8 个工具（售前 2 + 售后 6），另有 4 个 MCP 工具。
 
 5. **敏感操作两段式门控**  
    退款、改地址、物流拦截、退换货统一走 `validate → 用户确认 → execute`。模型不能直接动钱；校验不通过时直接列出原因，例如"退款金额 418 超过实付 159.8"。
@@ -60,7 +60,7 @@ npm run dev
 8. **会话可恢复、安全边界清楚**  
    LangGraph `SqliteSaver` 按 `thread_id` 持久化检查点，刷新或重启后继续会话；前端永远不直连模型 API，DeepSeek Key 只放在 Python 层 `backend/.env`。
 
-![图 3：查订单，订单卡与 Agent 步骤卡展示工具调用](submission-assets/03-order.png)
+![图 3：查订单，订单卡与多 Agent 面板展示工具轨迹](submission-assets/03-order.png)
 
 ![图 4：退款校验，预览金额与剩余额度，等待客户确认](submission-assets/04-refund.png)
 
@@ -116,9 +116,9 @@ python -m backend.app.rag.eval_v2
 
 本文档使用 6 张真实运行截图：
 
-1. 客服对话首页：四张客户场景卡与输入区（图 1）。
+1. 客服对话首页：3 分钟演示路线、能力卡与输入区（图 1）。
 2. 售前咨询：Agent 推荐商品，回答带 `[1]` 引用（图 2）。
-3. 查订单：订单卡与「order_lookup」步骤卡（图 3）。
+3. 查订单：订单卡与「order_lookup」工具轨迹（图 3）。
 4. 退款门控：校验预览、金额与剩余额度（图 4）。
 5. 投诉升级：工单号、类别、紧急度（图 5）。
 6. 知识库：切片编辑与即时生效（图 6）。

@@ -217,9 +217,7 @@ export function Sidebar({
         </nav>
 
         <div className="border-t border-line px-4 py-3 text-xs leading-relaxed text-ink-subtle">
-          会话本地持久化（data/app.db），刷新不丢失。
-          <br />
-          AI 能力经 FastAPI 接入层，前端不直连模型。
+          会话自动保存，刷新不丢失。
         </div>
       </aside>
     </>

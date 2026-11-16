@@ -65,6 +65,50 @@ def _thought(agent: str, input_: str, output: str, detail: str = "") -> dict:
     return {"agent": agent, "status": "completed", "input": input_, "output": output, "detail": detail}
 
 
+def _brief_result(result: str) -> str:
+    """工具返回压缩成一行关键字段，供「Agent 处理过程」展示，避免整段 JSON。"""
+    try:
+        data = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        return result[:80]
+    if isinstance(data, dict):
+        if "order_id" in data:
+            picked = [f"{k}={data[k]}" for k in ("order_id", "status", "carrier", "tracking_no", "amount") if data.get(k) not in (None, "")]
+            if picked:
+                return ", ".join(picked)[:120]
+        orders = data.get("orders")
+        if isinstance(orders, list) and orders and isinstance(orders[0], dict):
+            first = orders[0]
+            picked = [f"{k}={first[k]}" for k in ("order_id", "status", "carrier", "tracking_no", "amount") if first.get(k) not in (None, "")]
+            if picked:
+                return ", ".join(picked)[:120]
+        items = data.get("items")
+        if isinstance(items, list) and items and isinstance(items[0], dict):
+            first = items[0]
+            picked = [f"{k}={first[k]}" for k in ("name", "price", "stock", "sku_id") if first.get(k) not in (None, "")]
+            if picked:
+                return ", ".join(picked)[:120]
+        keys = ("status", "amount", "paid_amount", "after_amount", "needs_confirm", "error", "message")
+        picked = [f"{k}={data[k]}" for k in keys if data.get(k) not in (None, "")]
+        if picked:
+            return ", ".join(picked)[:120]
+    return result[:80]
+
+
+def _tool_trace(evidence: list[dict]) -> str:
+    """把本轮工具调用压成「工具(入参) → 关键返回」，让专家步骤能自证干了什么。"""
+    if not evidence:
+        return "未调用工具"
+    parts: list[str] = []
+    for item in evidence:
+        name = item.get("tool", "")
+        args = item.get("args") or {}
+        args_text = ", ".join(f"{k}={v}" for k, v in args.items() if v not in (None, ""))
+        brief = _brief_result(str(item.get("result", "")))
+        parts.append(f"{name}({args_text})" + (f" → {brief}" if brief else ""))
+    return "；".join(parts)[:300]
+
+
 # ── 工具子集（售前/售后隔离）──────────────────────────
 
 def _tools(*names: str) -> list[Any]:
@@ -189,21 +233,33 @@ async def _run_react(messages: list[dict], tools: list[Any], system: str) -> tup
 
 async def presales_node(state: AgentState) -> dict:
     text, evidence, kb_hits = await _run_react(state["messages"], PRESALES_TOOLS, PRESALES_SYSTEM)
+    trace = _tool_trace(evidence)
     return {
         "draft": text,
         "evidence": evidence,
         "kb_hits": kb_hits,
-        "thought_chain": [*state.get("thought_chain", []), _thought("presales", state["messages"][-1].get("content", ""), text[:200], f"调用 {len(evidence)} 次工具")],
+        "thought_chain": [*state.get("thought_chain", []), _thought(
+            "presales",
+            state["messages"][-1].get("content", ""),
+            trace,
+            f"调用 {len(evidence)} 次工具：{', '.join(e['tool'] for e in evidence)}" if evidence else "未调用工具",
+        )],
     }
 
 
 async def aftersales_node(state: AgentState) -> dict:
     text, evidence, kb_hits = await _run_react(state["messages"], AFTERSALES_TOOLS, AFTERSALES_SYSTEM)
+    trace = _tool_trace(evidence)
     return {
         "draft": text,
         "evidence": evidence,
         "kb_hits": kb_hits,
-        "thought_chain": [*state.get("thought_chain", []), _thought("aftersales", state["messages"][-1].get("content", ""), text[:200], f"调用 {len(evidence)} 次工具")],
+        "thought_chain": [*state.get("thought_chain", []), _thought(
+            "aftersales",
+            state["messages"][-1].get("content", ""),
+            trace,
+            f"调用 {len(evidence)} 次工具：{', '.join(e['tool'] for e in evidence)}" if evidence else "未调用工具",
+        )],
     }
 
 
@@ -250,7 +306,7 @@ async def review_node(state: AgentState) -> dict:
         final = (final or "您的问题已受理，我们会尽快处理。").strip()
         return {
             "final": final,
-            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:200], "终审完成（工单）")],
+            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", "", "工单已受理 · 已转人工")],
         }
 
     evidence = state.get("evidence", [])
@@ -265,13 +321,13 @@ async def review_node(state: AgentState) -> dict:
             # 追问不含事实断言，无需终审过滤，直接采用
             return {
                 "final": draft,
-                "thought_chain": [*state.get("thought_chain", []), _thought("review", draft[:200], draft[:200], "无工具，追问式回复")],
+                "thought_chain": [*state.get("thought_chain", []), _thought("review", "", "", "追问放行（无工具）")],
             }
         # 无证据又不是追问 → 它在凭模型知识编造，强制拒答
         final = "抱歉，这个问题我暂时没有查到确切信息，建议您联系人工客服进一步确认。"
         return {
             "final": final,
-            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", final[:200], "无工具且非追问，拒答")],
+            "thought_chain": [*state.get("thought_chain", []), _thought("review", "", "", "拒答（无证据）")],
         }
 
     evidence_block = "\n".join(
@@ -294,9 +350,12 @@ async def review_node(state: AgentState) -> dict:
         logger.warning("答案缺少 [n] 引用（有 %d 条知识库命中）: %s", len(kb_hits), final[:80])
 
     final = (final or state.get("draft") or "抱歉，我暂时无法回答，请稍后再试。").strip()
+    verdict = f"通过 · 证据 {len(evidence)} 条 · 引用 {len(kb_hits)} 条"
+    if kb_hits and "[" not in final:
+        verdict += " · 缺引用"
     return {
         "final": final,
-        "thought_chain": [*state.get("thought_chain", []), _thought("review", (state.get("draft") or "")[:200], final[:200], "终审完成")],
+        "thought_chain": [*state.get("thought_chain", []), _thought("review", "", "", verdict)],
     }
 
 

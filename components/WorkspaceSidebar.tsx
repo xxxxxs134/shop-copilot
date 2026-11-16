@@ -50,7 +50,7 @@ export function WorkspaceSidebar() {
       </nav>
 
       <div className="mt-auto border-t border-line px-5 py-3 text-xs leading-relaxed text-ink-subtle">
-        AI 能力经 FastAPI 接入层，前端不直连模型。
+        比赛演示版 · 本地种子数据
       </div>
     </aside>
   );

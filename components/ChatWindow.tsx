@@ -5,7 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { AgentSteps } from './AgentSteps';
 import { ThoughtChain } from './ThoughtChain';
 import { Sidebar } from './Sidebar';
-import { ScenarioCards } from './ScenarioCards';
+import { DemoGuide } from './DemoGuide';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { CitationCard } from './CitationCard';
@@ -154,6 +154,22 @@ export function ChatWindow() {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [agentMessages, agentStreaming, escalation]);
+
+  // 空会话 / 切换会话 → 不要沿用上一会话的滚动位置
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    el.scrollTop = agentMessages.length === 0 ? 0 : el.scrollHeight;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions.activeId]);
+
+  // 消息被清空（新建会话）→ 回到顶部，露出演示导览
+  useEffect(() => {
+    if (agentMessages.length !== 0) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [agentMessages.length]);
   // ── 引用溯源（P4）：按「本轮 user 消息」懒加载 ragSearch，会话内缓存 ──
   const [citation, setCitation] = useState<{ n: number; sources: CitationSource[] | null } | null>(
     null,
@@ -292,9 +308,9 @@ export function ChatWindow() {
     };
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
+  /** 发送一段文本：输入框提交与演示向导「开始」共用同一条路径 */
+  async function submitText(raw: string) {
+    const text = raw.trim();
     if (!text || busy) return;
     setInput('');
 
@@ -307,6 +323,18 @@ export function ChatWindow() {
     const history = agentMessages.map((m) => ({ role: m.role, content: m.content }));
     setAgentMessages((prev) => [...prev, { role: 'user', content: text }]);
     await runAgentTurn(text, history, threadId);
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    void submitText(input);
+  }
+
+  /** 演示向导：一键发送预设问题（忙碌时忽略，避免并发轮次） */
+  function runDemo(question: string) {
+    if (busy) return;
+    setInput('');
+    void submitText(question);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -426,6 +454,10 @@ export function ChatWindow() {
   }
 
   const conversationEmpty = agentMessages.length === 0;
+  /** 只有本轮出现过投诉工单，才显示「投诉处理方案」，避免客户看不懂这个按钮 */
+  const hasEscalation = agentMessages.some((m) =>
+    m.thoughtChain?.some((s) => s.agent === 'escalation'),
+  );
 
   return (
     <div className="flex h-full w-full overflow-hidden">
@@ -457,32 +489,36 @@ export function ChatWindow() {
             <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <h1 className="truncate text-sm font-semibold text-ink">{headerTitle}</h1>
-                <p className="mt-0.5 truncate text-xs text-ink-subtle">电商智能客服</p>
+                <p className="mt-0.5 truncate text-xs text-ink-subtle">LangGraph 多 Agent 客服</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {/* 新建会话 */}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void sessions.newSession()}
-                  disabled={sessions.busy}
-                  title="新建会话"
-                >
-                  新建会话
-                </Button>
-                {/* 生成处理方案（运营助手） */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setEscalateOpen(true)}
-                  disabled={escalating}
-                  title="运营助手：生成情况摘要、建议动作与可复制话术"
-                  className="hidden sm:inline-flex"
-                >
-                  {escalating ? '生成中…' : '生成处理方案'}
-                </Button>
+                {/* 新建会话（空状态隐藏：会话侧栏已有入口） */}
+                {!conversationEmpty && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void sessions.newSession()}
+                    disabled={sessions.busy}
+                    title="新建会话"
+                  >
+                    新建会话
+                  </Button>
+                )}
+                {/* 投诉处理方案：仅在出现投诉工单后显示，客户不会困惑 */}
+                {!conversationEmpty && hasEscalation && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEscalateOpen(true)}
+                    disabled={escalating}
+                    title="根据本轮投诉生成情况摘要、建议动作与可复制话术"
+                    className="hidden sm:inline-flex"
+                  >
+                    {escalating ? '生成中…' : '投诉处理方案'}
+                  </Button>
+                )}
                 <Badge tone="brand" className="hidden lg:inline-flex">
-                  DeepSeek
+                  多 Agent · 8 工具
                 </Badge>
               </div>
             </div>
@@ -495,22 +531,8 @@ export function ChatWindow() {
             className="min-h-0 flex-1 overflow-y-auto"
           >
             <div className="mx-auto w-full max-w-3xl space-y-4 break-words px-4 py-6">
-              {/* 空状态：品牌一句话 + 场景卡片 + 操作提示 */}
-              {conversationEmpty && (
-                <div className="flex flex-col items-center justify-center gap-6 py-10 text-center">
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold tracking-[0.18em] text-brand-600">
-                      店智 Copilot
-                    </p>
-                    <h2 className="text-xl font-semibold text-ink">电商智能客服</h2>
-                    <p className="text-sm text-ink-muted">
-                      售前查商品推荐、售后查订单退款，一个对话框全搞定。
-                    </p>
-                  </div>
-                  <ScenarioCards onSelect={setInput} />
-                  <p className="text-xs text-ink-subtle">点击卡片预填，Enter 发送</p>
-                </div>
-              )}
+              {/* 空状态：演示向导（价值主张 + 3 分钟路线 + 能力卡片） */}
+              {conversationEmpty && <DemoGuide onRun={runDemo} busy={busy} />}
               {/* 消息列表 */}
               {mode === 'agent' && (
                 <>
@@ -637,7 +659,7 @@ export function ChatWindow() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="描述问题（如：查订单、问商品、办退款），Enter 发送…"
+                  placeholder="试试：SO20261027009 到哪了 / 退我 80 块 / 我要投诉…"
                   rows={2}
                   className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-subtle"
                 />
@@ -652,7 +674,7 @@ export function ChatWindow() {
                 )}
               </div>
               <p className="mt-2 text-xs text-ink-subtle">
-                售前查商品推荐、售后查订单退款——自动判断，有据可查
+                自动判断售前/售后 · 工具调用与引用全程可见
               </p>
             </div>
           </form>

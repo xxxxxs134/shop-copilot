@@ -7,6 +7,7 @@ import { cn } from '@/lib/cn';
 const NAV_ITEMS = [
   { icon: '💬', label: '客服对话', href: '/chat' },
   { icon: '📦', label: '知识库', href: '/kb' },
+  { icon: '🧭', label: '系统概览', href: '/overview' },
 ] as const;
 
 export function MobileNav() {

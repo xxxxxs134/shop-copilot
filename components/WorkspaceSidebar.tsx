@@ -13,6 +13,7 @@ interface SidebarEntry {
 const NAV_ITEMS: readonly SidebarEntry[] = [
   { icon: '💬', label: '客服对话', href: '/chat' },
   { icon: '📦', label: '知识库', href: '/kb' },
+  { icon: '🧭', label: '系统概览', href: '/overview' },
 ];
 
 export function WorkspaceSidebar() {

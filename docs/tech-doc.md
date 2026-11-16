@@ -25,7 +25,7 @@ pre { font-size: 7.6pt; line-height: 1.28; }
 
 店智 Copilot 是面向电商客户的智能客服 Agent。它把客户下单前后最常问的四类请求收进同一个对话框：咨询商品、查订单物流、办退款退货、投诉升级；商家侧则在知识库里维护商品知识与售后政策。系统由 Next.js 16 前端与 FastAPI AI 接入层组成，前端不直连任何模型；文本推理走 DeepSeek Chat，商品图理解走 GLM-4V-Flash，检索由 jieba BM25 与 fastembed BGE-small-zh 向量经 RRF 融合完成。
 
-项目已落地 2 个入口（客服对话 `/chat`、知识库 `/kb`）、43 篇知识库语料、12 段可复现场景、20 单种子订单、售前 2 + 售后 6 个主链路工具与 4 个 MCP 工具。Agent 由 LangGraph StateGraph 编排：Router 按四类意图（售前咨询、售后处理、投诉升级、追问澄清）分流，并输出置信度与情绪，售前售后各自隔离工具集，统一汇入终审防幻觉。退款、改地址、拦截物流、退换货四类敏感操作统一走 validate → 用户确认 → execute 的两段式门控，模型不直接动钱。检索自测 top-3 相关率 90%，交付冒烟 9/9，前端 tsc、eslint、build 全部通过。
+项目已落地 2 个入口（客服对话 `/chat`、知识库 `/kb`）、43 篇知识库语料、12 段可复现场景、20 单种子订单、7 个客服工具（`kb_search` 售前售后共用，按工具位计 8 个）与 3 个运营向工具（注册表共 10 个，其中 4 个经 MCP 暴露）。Agent 由 LangGraph StateGraph 编排：Router 按四类意图（售前咨询、售后处理、投诉升级、追问澄清）分流，并输出置信度与情绪，售前售后各自隔离工具集，统一汇入终审防幻觉。退款、改地址、拦截物流、退换货四类敏感操作统一走 validate → 用户确认 → execute 的两段式门控，模型不直接动钱。检索自测 top-3 相关率 90%，交付冒烟 9/9，前端 tsc、eslint、build 全部通过。
 
 **关键词**：电商智能客服；LangGraph；多 Agent；RAG；工具调用；两段式门控；可溯源引用
 
@@ -63,7 +63,7 @@ pre { font-size: 7.6pt; line-height: 1.28; }
 
 ### 1.4 与同类方案的边界
 
-与通用聊天机器人相比，店智 Copilot 的回答有 `[n]` 角标可回查原文，工具调用以步骤卡展示，敏感操作有后端门控；与传统工单系统相比，它不把问题推给排队，而是在对话内完成退款、改址、拦截与退换。边界同样明确：订单与商品查询读本地 30 天种子库，售后操作作用于种子订单，不接平台真实授权。
+与通用聊天机器人相比，店智 Copilot 的回答有 `[n]` 角标可回查原文，工具调用以「多 Agent 处理过程」面板留痕，敏感操作有后端门控；与传统工单系统相比，它不把问题推给排队，而是在对话内完成退款、改址、拦截与退换。边界同样明确：订单与商品查询读本地 30 天种子库，售后操作作用于种子订单，不接平台真实授权。
 
 ---
 
@@ -121,7 +121,7 @@ pre { font-size: 7.6pt; line-height: 1.28; }
 
 ```
 浏览器  Next.js 16  /chat /kb
-  │  流式 Markdown · Agent 步骤卡 · [n] 引用 · 图片/语音
+  │  流式 Markdown · 多 Agent 面板 · [n] 引用 · 图片/语音
   ▼  同源 /api/* 代理（浏览器不直连模型）
 FastAPI  backend/app/    AI 能力唯一接入层
   ├─ api/        agent · vision · sessions · refund · kb · data
@@ -150,10 +150,10 @@ GLM-4V-Flash（商品图，可选）
        escalation → 投诉方案（安抚 + 摘要 + 建议 + 话术）
        clarify    → 直接追问，不进工具
   → specialist：最多 5 轮 tool_calls
-        → SSE step / step_result → 回填 tool message
+        → 工具结果回填 tool message（轨迹随 done 下发）
   → review：无工具证据拒答；有命中但缺 [n] 告警
-  → SSE delta 流式文本 → done（含 citations、router）
-  → 前端渲染步骤卡、订单卡、[n] 角标
+  → SSE delta 流式文本 → done（含 citations、router、thought_chain）
+  → 前端渲染多 Agent 面板、订单卡、[n] 角标
 ```
 
 RAG 检索在请求进入上游前完成，命中片段前置到 system；`/v1/chat/completions` 作为独立的 RAG 问答接口保留，供评测与外部调用，前端主链路统一走 `/v1/agent/chat`。Agent 每轮非流式调用以完整拿到 `tool_calls`，最终答案才按 8 字符块通过 `delta` 推送。
@@ -197,7 +197,7 @@ RAG 检索在请求进入上游前完成，命中片段前置到 system；`/v1/c
 
 关键词通道选 jieba 加自实现 BM25，而不是 Elasticsearch。规则条文里「保证金」「体验分」「直通车」这类专有词，分词后命中很直接；BM25 的 k1 与 b 可调，代码不足百行，和向量通道共享同一批候选，RRF 融合不需要跨服务调用。
 
-编排层选 LangGraph StateGraph，不引 Dify/FastGPT。多 Agent 分流、共享状态、可替换 checkpointer 正是 LangGraph 的主场；如果手写循环，分支路由、状态合并与会话恢复都要自己维护，收益低于框架成本。低代码平台会让「自研 Agent」这一叙事失效，工具循环、事件流与错误处理也会被包进黑盒，因此不选。当前图结构只有 6 个节点、8 个主链路工具，版本锁定在 0.2.8，升级风险可控。
+编排层选 LangGraph StateGraph，不引 Dify/FastGPT。多 Agent 分流、共享状态、可替换 checkpointer 正是 LangGraph 的主场；如果手写循环，分支路由、状态合并与会话恢复都要自己维护，收益低于框架成本。低代码平台会让「自研 Agent」这一叙事失效，工具循环、事件流与错误处理也会被包进黑盒，因此不选。当前图结构只有 6 个节点、7 个客服工具（按工具位 8 个），版本锁定在 0.2.8，升级风险可控。
 
 | 组件 | 备选 | 不选的原因 |
 |---|---|---|
@@ -258,9 +258,8 @@ for step in 1..MAX_STEPS:
     resp = DeepSeek(messages, tools=本 Agent 的工具集, stream=false)
     if resp.tool_calls:
         for call in resp.tool_calls:
-            emit step(call.name, call.args)
             result = REGISTRY[call.name].call(call.args)   # 超过 4000 字符截断
-            emit step_result(call.name, summary(result))
+            trace.append((call.name, summary(result)))     # 随 done 下发到多 Agent 面板
             messages.append(tool_message(call.id, result))
         continue
     return resp.content
@@ -273,13 +272,13 @@ emit error("已达最大工具调用步数 5")
 
 | SSE 事件 | 载荷 | 前端行为 |
 |---|---|---|
-| `step` | `{tool, args}` | 新建步骤卡，显示工具名与参数 |
-| `step_result` | `{tool, summary}` | 展开卡片，显示结果 JSON 或摘要 |
 | `delta` | `{text}` | 追加到当前消息，逐字渲染 |
-| `done` | `{citations, router}` | 结束加载态，挂载引用角标与意图 chip |
+| `done` | `{citations, router, thought_chain, kb_hits}` | 结束加载态；挂载引用角标与意图 chip；用 `thought_chain` 渲染「多 Agent 处理过程」面板 |
 | `error` | `{message}` | 内联错误提示，保留已输出内容 |
 
-注册表里共 10 个工具：8 个进主链路（售前 2 + 售后 6，`kb_search` 两边共用），`data_query`、`copywriting`、`policy_check` 是运营向能力，保留在注册表并经 MCP 暴露，不参与客户主链路。主链路工具按职责分三组：知识检索、商品/订单查询、办理组；查询走 `DataProvider`，办理组统一采用两段式协议。
+工具调用不逐条推事件。专家节点执行完后，把工具名与关键返回字段写进 `thought_chain`，随 `done` 一次下发；前端据此渲染专家接手、handoff、工具轨迹与终审裁决，避免工具耗时抖动导致半成品卡片。
+
+注册表共 10 个工具：7 个客服工具（`kb_search`、`product_lookup`、`order_lookup`、`refund_flow`、`modify_address`、`intercept_logistics`、`return_exchange`），其中 `kb_search` 售前售后共用，按工具位算售前 2 + 售后 6；另 3 个是运营向能力（`data_query`、`copywriting`、`policy_check`），保留在注册表并经 MCP 暴露，不参与客户主链路。客服工具按职责分三组：知识检索、商品/订单查询、办理组；查询走 `DataProvider`，办理组统一采用两段式协议。MCP 共暴露 4 个工具（`kb_search` + 3 个运营向）。
 
 | 工具 | 归属 | 参数 | 返回 | 用途 |
 |---|---|---|---|---|
@@ -423,11 +422,11 @@ MCP Server 是独立进程，用 FastMCP 的 stdio 传输，启动命令为 `pyt
 | 分块 | 800 字符、200 重叠、按段落边界 flush | 规则条文被切断，检索只命中半条 | 43 篇语料可重建索引 |
 | RRF | 两路各取 2k 候选，按排名融合 | 单通道漏召回，向量与 BM25 量纲不一致 | 自测 9/10 = 90% |
 | 缓存 | `Retriever` 进程内单例；切片保存后 `invalidate` | 每次请求重复加载索引与 BM25 统计 | 知识库保存后下一次检索即生效 |
-| 上下文裁剪 | `kb_search` 每片段 400 字；步骤摘要 120 字；工具结果统一 4000 字截断 | tool message 膨胀，多步循环挤爆上下文 | 8 个主链路工具、5 步上限内稳定 |
+| 上下文裁剪 | `kb_search` 每片段 400 字；步骤摘要 120 字；工具结果统一 4000 字截断 | tool message 膨胀，多步循环挤爆上下文 | 7 个客服工具（按工具位 8 个）、5 步上限内稳定 |
 | 流式 | 工具阶段非流式解析，最终答案按 8 字符块推送 | 既要完整 `tool_calls`，又要逐字呈现 | 实测 138 段 delta |
 | 成本 | 本地嵌入、免费视觉档、步数上限、缺 key 降级 | API 费用与失控循环 | 无密钥也能启动与演示非 AI 页面 |
 
-延迟方面只做结构性优化，不写未测量的毫秒数。检索在请求进入上游前完成，命中才注入；Agent 每轮工具调用都是短请求，最终答案才流式；前端在等待首字时先渲染步骤卡，让用户看到「正在查什么」，而不是空白转圈。这些做法改善的是感知等待，不是伪造吞吐。
+延迟方面只做结构性优化，不写未测量的毫秒数。检索在请求进入上游前完成，命中才注入；Agent 每轮工具调用都是短请求，最终答案才流式；前端在等待首字时显示处理中状态，工具轨迹随 `done` 挂到面板，而不是空白转圈。这些做法改善的是感知等待，不是伪造吞吐。
 
 ---
 
@@ -476,15 +475,15 @@ LangGraph 编排在 `backend/app/agent/graph.py`：`intent_router` 用 json_obje
 
 以 001 为例。实付 ¥159.8，用户要求退 80，validate 逐条通过并返回「退款 ¥80，剩余 ¥79.8」与一次性令牌；用户确认后 execute 落库，订单变为已退款，售后单记录金额与时间。
 
-同一套门控在前端 `RefundDialog` 中复用。弹窗三步：输入订单与金额、点「下一步：校验」、确认预览后点「确认退款」。聊天内工具调用与弹窗调用命中同一组后端接口，规则不会出现两套。
+退款门控在当前主链路里完全在对话内完成：用户说「退 80 块」，售后 Agent 调 `refund_flow(validate)` 返回预览与一次性令牌并停下等待；用户回复「确认」后，同一 `thread_id` 带上下文再次进入售后节点，调 `refund_flow(execute)` 落库并返回回执。`RefundDialog` 组件保留在代码库中，复用同一组后端接口；演示以对话内两段式为准。
 
 校验失败同样有明确出口。场景 4 中用户要求 001 退 418，validate 返回 `ok=false`，`violations` 为「退款金额 418.0 超过实付金额 159.8」，不签发令牌。模型原样转述拒因，并给出两条合规替代：按实付 159.8 整单退，或走价保补差价。
 
 ### 5.5 订单卡与结构化工具结果
 
-`order_lookup` 返回结构化 JSON：`{ok, order_count, orders[], aftersales_count, aftersales[]}`。Agent 步骤卡解析 `orders[0]`、`order` 或顶层 `order_id`，渲染成订单卡，展示订单号、买家、商品、实付、状态、物流方与运单号。009 的卡片显示郑\*、不锈钢保温饭盒 ×2、¥178、已发货、圆通速递 YT9182736455102。
+`order_lookup` 返回结构化 JSON：`{ok, order_count, orders[], aftersales_count, aftersales[]}`。前端从工具结果中解析 `orders[0]`、`order` 或顶层 `order_id`，渲染成订单卡，展示订单号、买家、商品、实付、状态、物流方与运单号。009 的卡片显示郑\*、不锈钢保温饭盒 ×2、¥178、已发货、圆通速递 YT9182736455102。
 
-订单卡右侧有「处理退款」按钮，点击打开 `RefundDialog` 并预填订单号。这条链路把「查询结果」直接变成「下一步动作」，用户不用记住订单号再手输。
+订单卡是只读详情，退款不依赖卡片按钮：用户看着订单卡继续说「退 80 块」，Agent 结合上下文里的订单号发起预览，再把金额与剩余可退摆出来等确认。查询结果与下一步动作在同一个对话里衔接，用户不用重输订单号。
 
 ### 5.6 引用溯源
 
@@ -494,7 +493,7 @@ LangGraph 编排在 `backend/app/agent/graph.py`：`intent_router` 用 json_obje
 
 ### 5.7 流式渲染与会话状态
 
-流式渲染分两段。Agent 的工具阶段不流式，因为要完整解析 `tool_calls`；最终答案按 8 字符块发 `delta`，前端逐块追加。RAG 问答接口保留同构的 SSE 字节流转发，供评测与外部调用；前端 Agent 主链路统一由 `agentRun` 解析事件并驱动状态。两种链路的 UI 表现一致：步骤卡先于文字出现，文字逐字出现。
+流式渲染分两段。Agent 的工具阶段不流式，因为要完整解析 `tool_calls`；最终答案按 8 字符块发 `delta`，前端逐块追加。RAG 问答接口保留同构的 SSE 字节流转发，供评测与外部调用；前端 Agent 主链路统一由 `agentRun` 解析事件并驱动状态。两种链路的文字都逐字出现；Agent 主链路的工具轨迹在 `done` 时一次性挂到「多 Agent 处理过程」面板。
 
 会话切换有四层防护：debounce 1.5s 延迟 `PUT` 全量覆盖并在切换前 flush；`signature(id, messages)` 与 `savedSigRef` 比对，相同则跳过；`loadingRef` 在加载窗口内禁止 flush；`activeIdRef` 让回调闭包读 ref 而非 state。会话 API 用 `PUT /messages` 覆盖消息，`PATCH` 改标题或模式，`DELETE` 删除；删除是两步确认，自动标题在首条消息发送时写入。
 
@@ -527,9 +526,9 @@ LangGraph 编排在 `backend/app/agent/graph.py`：`intent_router` 用 json_obje
 | 验收项 | 结果 | 证据 |
 |---|---|---|
 | `/chat` 1440 与 390 无横向滚动 | 通过 | `scrollWidth == clientWidth` |
-| 订单卡与「处理退款」按钮 | 通过 | 009 卡片免展开，按钮可见 |
-| 退款确认页金额可见 | 通过 | 「退款 ¥80，剩余 ¥79.8」 |
-| 投诉场景 escalation 步骤 | 通过 | ThoughtChain 显示类别/紧急度，回复含 TK 工单号 |
+| 订单卡与退款预览 | 通过 | 009 卡片展示物流；001 对话内给出 80 / 159.8 / 79.8 预览 |
+| 退款预览金额可见 | 通过 | 「退款 ¥80，剩余 ¥79.8」 |
+| 投诉场景多 Agent 面板 | 通过 | 投诉 Agent 接手 + 类别/紧急度 + TK 工单号 |
 | 两页 console error | 通过 | 均为空数组 |
 | 知识库保存与还原 | 通过 | 8% 生效后还原为类目均值 |
 
@@ -609,7 +608,7 @@ npm run start                                  # 生产模式，默认 3000
 | 交互创新 | 7% | A2、A4 | 两入口、多 Agent 过程面板、订单卡 |
 | 实用性 | 30% | A1、A2、A3、T4 | 12 段场景、知识库编辑即生效 |
 | AI 大模型集成 | 8% | T3 | 流式回答、结构化输出、角标 |
-| Agent/工作流 | 8% | T1、T2 | 8 个主链路工具、LangGraph 编排、两段式 |
+| Agent/工作流 | 8% | T1、T2 | 7 个客服工具（按工具位 8 个）、LangGraph 编排、两段式 |
 | RAG | 6% | T3、T4 | 90% 自测、v1/v2 评测、溯源 |
 | 多模态 | 5% | 4.5 节 | 商品图生成文案、语音输入 |
 | AI 安全可控 | 4% | T1 | 令牌、确认、幂等、审计 |
@@ -622,7 +621,7 @@ npm run start                                  # 生产模式，默认 3000
 
 ### 8.1 成果
 
-项目完成了一个可运行的智能客服 Agent，而不是演示用的聊天页。LangGraph 多 Agent 编排（Router→售前/售后/投诉升级→终审）、2 个入口、43 篇语料、12 段场景、20 单种子订单、售前 2 + 售后 6 个工具、4 个 MCP 工具全部落地；四类敏感操作走同一套两段式门控，模型不直接动钱；RAG 回答带可点角标，检索自测 90%，交付冒烟 9/9，前端构建与类型检查全绿。前端不直连模型，密钥只在 Python 层，工具异常不中断 SSE，缺密钥与缺索引都有降级路径。
+项目完成了一个可运行的智能客服 Agent，而不是演示用的聊天页。LangGraph 多 Agent 编排（Router→售前/售后/投诉升级→终审）、2 个入口、43 篇语料、12 段场景、20 单种子订单、7 个客服工具（按工具位 8 个）、3 个运营向工具（MCP 暴露 4 个）全部落地；四类敏感操作走同一套两段式门控，模型不直接动钱；RAG 回答带可点角标，检索自测 90%，交付冒烟 9/9，前端构建与类型检查全绿。前端不直连模型，密钥只在 Python 层，工具异常不中断 SSE，缺密钥与缺索引都有降级路径。
 
 ### 8.2 局限
 
@@ -632,7 +631,7 @@ npm run start                                  # 生产模式，默认 3000
 
 **评测样本小。** v1 20 题、v2 15 题，裁判是 LLM，存在采样波动与误判，绝对分数不宜过度解读。
 
-**单机与单用户。** 没有账号体系、多租户与云端同步；长会话混合话题时模型偶发跳过工具直接给结论，产品用 `RefundDialog` 与订单卡上的「处理退款」兜底。
+**单机与单用户。** 没有账号体系、多租户与云端同步；长会话混合话题时模型偶发跳过工具直接给结论，产品用后端两段式校验与多轮确认兜底。
 
 ### 8.3 路线图
 

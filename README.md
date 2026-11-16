@@ -46,7 +46,7 @@
 
 ```
 浏览器 (Next.js)
- │  流式对话 + Agent 步骤卡片 + 引用角标[1] + 语音/图片
+ │  流式对话 + 多 Agent 面板 + 引用角标[1] + 语音/图片
  ▼
 FastAPI  backend/app/          ← AI 能力唯一接入层（比赛规则要求）
  ├── api/routes                # /v1/chat/completions（RAG问答）
@@ -56,18 +56,19 @@ FastAPI  backend/app/          ← AI 能力唯一接入层（比赛规则要求
  │   ├── graph                 #   StateGraph：router→售前/售后/投诉→终审
  │   ├── router                #   意图路由（售前/售后/投诉/澄清，JSON 模式）
  │   ├── llm                   #   DeepSeek 共享客户端（4 次重试 + JSON 模式）
- │   └── tools                 #   8 个客服工具：product_lookup / kb_search
- │                             #   order_lookup / refund_flow / modify_address
- │                             #   intercept_logistics / return_exchange
+ │   └── tools                 #   7 个客服工具（kb_search 共用，按工具位 8 个）
+ │                             #   product_lookup / order_lookup / refund_flow
+ │                             #   modify_address / intercept_logistics / return_exchange
  ├── rag/                      # 混合检索（jieba BM25 + 向量 RRF 融合）
  │   ├── pipeline              #   分块 → fastembed 嵌入 → LanceDB
  │   ├── retrieve              #   检索 API
  │   ├── selftest              #   C9 检索质量自测
  │   └── eval                  #   C10 开/关 RAG 对比评测
- └── mcp_server/               # 独立 MCP 进程（stdio），复用 agent 工具
  ▼
 外部: DeepSeek API · GLM-4V（可选）
 ```
+
+MCP Server 位于 `backend/mcp_server/`，独立进程（stdio），复用 `agent/tools` 注册表，暴露 4 个工具（`kb_search` + 3 个运营向）。
 
 **前端永远不直连任何模型 API**——一切 AI 请求走 FastAPI（密钥校验与注入都在 Python 层）。
 
@@ -126,13 +127,13 @@ backend/
       data_provider.py  # DataProvider Protocol（sqlite 真查 / mock 兜底，.env 切换）
       seed_store.py     # 30 天经营种子库生成器（幂等，data/store.db 不入库）
       tools/__init__.py # Tool dataclass + 注册表
-      __init__.py       # 8 个客服工具实现（检索/订单/退款/改址/拦截/退换）
+      __init__.py       # 7 个客服工具实现（检索/商品/订单/退款/改址/拦截/退换）
     rag/
       pipeline.py       # 语料清洗/分块/嵌入/LanceDB 索引
       retrieve.py       # BM25+向量 RRF 融合检索
       selftest.py       # 检索质量自测（C9）
       eval.py           # 开/关 RAG 对比评测（C10）
-    mcp_server/__init__.py  # MCP 独立进程（FastMCP，4 tools）
+  mcp_server/__init__.py  # MCP 独立进程（FastMCP，4 tools；与 app 平级）
   requirements.txt
   .env.example          # 密钥模板（真实 .env 不入库）
 data/
@@ -162,7 +163,7 @@ components/
   CitationCard.tsx      # 引用来源溯源卡片（右下弹出）
   MessageActions.tsx    # 消息 hover 操作条（复制/重新生成）
   MessageBubble.tsx     # 统一消息气泡
-  AgentSteps.tsx        # Agent 工具步骤卡片
+  AgentSteps.tsx        # 旧版工具步骤卡（当前主链路用 ThoughtChain）
 lib/
   agentClient.ts        # Agent SSE 解析器
   agentRun.ts           # Agent 单轮执行器（SSE→回调，组件瘦身）

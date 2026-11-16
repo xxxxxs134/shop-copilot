@@ -46,7 +46,7 @@ npm run dev
    回答不是"模型凭印象说"，而是先检索知识库，再把命中的文档片段拼进上下文。点角标能看到标题、分类和原文片段。
 
 4. **Agent 过程透明**  
-   LangGraph 编排，每个 specialist 内部最多 5 步工具调用；「多 Agent 处理过程」面板把专家接手、handoff、工具名与关键返回字段、终审裁决逐步摊开。主链路 8 个工具（售前 2 + 售后 6），另有 4 个 MCP 工具。
+   LangGraph 编排，每个 specialist 内部最多 5 步工具调用；「多 Agent 处理过程」面板把专家接手、handoff、工具名与关键返回字段、终审裁决逐步摊开。主链路 7 个客服工具（`kb_search` 售前售后共用，按工具位算 8 个），另有 3 个运营向工具经 MCP 暴露（MCP 共 4 个）。
 
 5. **敏感操作两段式门控**  
    退款、改地址、物流拦截、退换货统一走 `validate → 用户确认 → execute`。模型不能直接动钱；校验不通过时直接列出原因，例如"退款金额 418 超过实付 159.8"。
@@ -104,7 +104,7 @@ python -m backend.app.rag.eval_v2
 - **前端**：Next.js 16 App Router、TypeScript strict、Tailwind CSS、SSE 流式渲染（自研 `agentRun` 解析 step / delta / done 事件）。
 - **后端**：Python 3.12、FastAPI、httpx、SQLite、Pydantic。
 - **RAG**：jieba BM25 + fastembed BGE-small-zh 向量 + LanceDB + RRF 融合；top-4 检索；引用角标与 `/v1/rag/search` 同源。
-- **Agent**：LangGraph 0.2.8 StateGraph（Router→售前/售后/投诉→终审）+ DeepSeek function calling；specialist 内最多 5 步；8 个主链路工具 + 4 个 MCP 工具；SSE 事件 `step/delta/done/error`。
+- **Agent**：LangGraph 0.2.8 StateGraph（Router→售前/售后/投诉→终审）+ DeepSeek function calling；specialist 内最多 5 步；7 个客服工具（按工具位 8 个）+ 3 个运营向工具（MCP 暴露 4 个）；SSE 事件 `delta/done/error`，工具轨迹随 `done` 下发。
 - **记忆**：`langgraph-checkpoint-sqlite` 的 SqliteSaver，`thread_id` 与前端会话 ID 全链路一致。
 - **MCP**：FastMCP stdio 独立进程，复用 Agent 工具注册表。
 - **安全**：前端不直连模型；Key 只在 Python 层；同源 `/api/*` 代理；`.env` 不入库。

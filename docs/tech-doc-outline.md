@@ -1,5 +1,7 @@
 # 店智 Copilot — PDF 技术文档大纲
 
+> **历史文档（早期大纲）**：最终 `docs/tech-doc.md` 已按 LangGraph 多 Agent（6 节点）、7 个客服工具 + 3 个运营向工具（MCP 暴露 4 个）、43 篇语料重写，页数 16 页；本大纲中的 ReAct / data_query / 8-12 页等描述已过时，仅保留写作过程。
+
 > 用途：转 PDF 提交（可用 Typora / VS Code Markdown PDF 导出，或 pandoc）。预计 8-12 页。
 
 ## 1. 项目概述（1 页）

@@ -24,6 +24,9 @@ data/index/
 data/app.db
 data/store.db
 
+# 文档导出中间产物（由 md 生成，PDF 才是交付物）
+docs/*.print.html
+
 # 日志与系统文件
 *.log
 npm-debug.log*

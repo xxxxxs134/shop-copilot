@@ -10,9 +10,9 @@
 
 - 产品名：店智 Copilot
 - 品类：电商智能客服 Agent（售前 + 售后全链路）
-- 形态：客户对话入口（`/chat`）+ 商家知识库（`/kb`）两个入口
+- 形态：客户对话入口（`/chat`）+ 商家知识库（`/kb`）两个业务入口，另有 `/overview` 系统概览页
 - 是什么：基于 LangGraph 的多 Agent 客服，Router 分流 + 售前/售后专业 Agent + 终审防幻觉
-- 不是什么：不是运营后台 / 数据看板；不做 ERP 式全量 CRUD
+- 不是什么：不是运营后台 / 数据看板；`/overview` 只陈述事实基线，不做经营指标；不做 ERP 式全量 CRUD
 
 ## 目标用户
 
@@ -59,7 +59,7 @@
 | 商品 | 12 个 SKU | `data/store.db`（`backend/app/agent/seed_store.py` 生成） |
 | 种子订单 | 20 单 | `data/store.db` |
 | Agent 工具 | 售前 2 + 售后 6 | `backend/app/agent/graph.py` |
-| 页面 | 2 个入口：`/chat`（客服对话）+ `/kb`（知识库） | `app/**/page.tsx` |
+| 页面 | 3 个页面：`/chat`（客服对话）+ `/kb`（知识库）+ `/overview`（系统概览） | `app/**/page.tsx` |
 | Agent 编排 | LangGraph StateGraph（Router→Specialist→Review） | `backend/app/agent/graph.py` |
 | 前端 | Next.js 16.4 + TypeScript strict + Tailwind 3.4 | `package.json` |
 | 后端 | Python 3.12 + FastAPI（AI 能力唯一接入层） | `backend/app/main.py` |

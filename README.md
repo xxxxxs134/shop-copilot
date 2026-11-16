@@ -4,7 +4,7 @@
 
 > 支持 LangGraph 多 Agent 编排（售前/售后/投诉升级/澄清 + 终审）、RAG 知识库问答（43 篇语料，回答带 [1][2] 溯源）、两段式退款门控、思维链过程可视化、会话持久化与引用溯源。
 
-> 事实基线：43 篇知识库语料 · 12 段场景案例 · 20 单种子订单 · 2 个入口（客服对话 / 知识库）。产品口径以 [docs/positioning.md](./docs/positioning.md) 为唯一真源。
+> 事实基线：43 篇知识库语料 · 12 段场景案例 · 20 单种子订单 · 2 个业务入口（客服对话 / 知识库）+ 1 个系统概览页。产品口径以 [docs/positioning.md](./docs/positioning.md) 为唯一真源。
 
 ## 🤖 Agent 能做什么（售后处理场景）
 
@@ -96,10 +96,11 @@ npm install
 npm run dev                             # http://localhost:3000
 ```
 
-打开 http://localhost:3000（`/` 自动跳 `/chat`），左侧两个入口跨路由常驻，移动端收成顶部导航：
+打开 http://localhost:3000（`/` 自动跳 `/chat`），左侧三个入口跨路由常驻，移动端收成顶部导航：
 
 - **客服对话 `/chat`**：LangGraph 多 Agent 编排。Router 自动判断售前/售后/投诉/澄清，售前查商品推荐、售后查订单退款；回答带 `[1][2]` 角标，**点击弹出来源卡片可溯源核对**；「多 Agent 处理过程」面板展示 4 个专家花名册（命中高亮）、Router 意图、handoff 行、专家工具轨迹与终审裁决；会话栏支持新建/改名/两步确认删除（SQLite `data/app.db` 持久化）
 - **知识库 `/kb`**：43 篇文档的切片列表与行内编辑，商家维护商品知识/售后政策；保存即重新嵌入并失效旧检索；重建索引进度与耗时在 toast 里显示
+- **系统概览 `/overview`**：只陈述仓库事实基线，展示一次请求的路由/专家/终审流程、质量与边界、10 个注册工具（MCP 暴露 4 个）和 3 条演示路线，不引入虚构指标
 
 其他细节：**Markdown 渲染**（代码块/表格/列表/加粗，消息 hover 可复制、重新生成）；**多模态**（输入框旁 🖼️ 上传商品图 → GLM-4V 生成标题/卖点/描述；🎤 语音输入走浏览器 Web Speech API）。
 
@@ -145,12 +146,13 @@ app/
   page.tsx              # `/` → `/chat` 重定向
   chat/page.tsx         # 客服对话（LangGraph 多 Agent + 多 Agent 面板 + 演示导览）
   kb/page.tsx           # 知识库（切片编辑即生效）
+  overview/page.tsx     # 系统概览（请求流程 / 质量边界 / 工具注册表 / 演示路线）
   layout.tsx            # 全局壳：左导航 + 移动端顶部导航
   api/agent/route.ts    # Agent SSE 透传代理
   api/vision/route.ts   # 图生文案代理
   api/v1/[...path]/route.ts  # /api/v1/* 同源代理 → FastAPI（会话/溯源，避免浏览器直连 8000）
 components/
-  WorkspaceSidebar.tsx  # 全局左导航（客服对话 / 知识库）
+  WorkspaceSidebar.tsx  # 全局左导航（客服对话 / 知识库 / 系统概览）
   MobileNav.tsx         # <md 顶部横向导航
   ChatWindow.tsx        # 聊天主窗口（会话状态机接入 + 引用溯源 + 语音/图片）
   Sidebar.tsx           # 对话页二级会话栏（新建/改名/两步确认删除/mode 徽章）

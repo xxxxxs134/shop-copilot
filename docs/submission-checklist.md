@@ -38,16 +38,16 @@ node scripts/smoke.mjs
 ## 3. 文档事实一致性（2 min）
 
 ```powershell
-# 43 篇语料 / 12 段场景 / 20 单种子 / 2 个入口
+# 43 篇语料 / 12 段场景 / 20 单种子 / 2 个业务入口 + 1 个系统概览
 (Get-ChildItem data\raw -Filter *.md).Count          # 43
 (Select-String docs\scenarios.md -Pattern '^## 场景 ').Count
 python -c "import sqlite3;print(sqlite3.connect('data/store.db').execute('select count(*) from orders').fetchone()[0])"
 
 # PDF：页数与口径
-python -c "from pypdf import PdfReader;r=PdfReader('docs/tech-doc.pdf');t=''.join((p.extract_text() or '') for p in r.pages);print(len(r.pages), '43 篇' in t, '40 篇' in t, 'v1.3' in t)"
+python -c "from pypdf import PdfReader;r=PdfReader('docs/tech-doc.pdf');t=''.join((p.extract_text() or '') for p in r.pages);print(len(r.pages), '43 篇' in t, '40 篇' in t, 'v1.4' in t)"
 ```
-- [ ] 43 / 12 / 20 / 2 四个数字与 README、`docs/positioning.md` 一致
-- [ ] PDF ≤30 页，且输出 `16 True False True`（16 页 / 含 43 篇 / 不含 40 篇 / v1.3）
+- [ ] 43 / 12 / 20 与页面口径（2 个业务入口 + 1 个系统概览）和 README、`docs/positioning.md` 一致
+- [ ] PDF ≤30 页，且输出 `16 True False True`（16 页 / 含 43 篇 / 不含 40 篇 / v1.4）
 - [ ] 禁用词只出现在竞品对比或「禁止表述」语境：
   `git grep -n -E "AI 工作台|运营工作台|客服工作台|一键转人工|转人工协同"`
 
@@ -61,12 +61,12 @@ git push -u origin master
 ```
 - [ ] 工作区干净（无未提交改动）
 - [ ] 远端仓库为 **Public**，默认分支可访问
-- [ ] 仓库首页 README 能直接看到：定位、两个入口（客服对话/知识库）、运行步骤、团队信息
+- [ ] 仓库首页 README 能直接看到：定位、三个入口（客服对话/知识库/系统概览）、运行步骤、团队信息
 
 ## 5. 提交物清单
 
 - [ ] 代码仓库链接（Public）
-- [ ] `docs/tech-doc.pdf`（v1.3，16 页）
+- [ ] `docs/tech-doc.pdf`（v1.4，16 页）
 - [ ] 演示视频 MP4（5–8 min，1080p）
 - [ ] README（含团队信息、架构、快速开始）
 - [ ] `.env.example` + `backend/.env.example`

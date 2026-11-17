@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { ScenarioCards } from './ScenarioCards';
@@ -17,15 +16,15 @@ interface DemoRoute {
 const ROUTES: readonly DemoRoute[] = [
   {
     no: '01',
-    title: '查订单',
-    prompt: 'SO20261027009 到哪了？',
-    expected: '订单卡 + 物流轨迹 + 预计到达',
+    title: '拦截物流',
+    prompt: 'SO20261027007 地址填错了，已经发货了，能帮我拦截吗？',
+    expected: '订单信息 + 拦截确认 → 输入「确认拦截」执行',
   },
   {
     no: '02',
-    title: '办退款',
-    prompt: '订单 SO20261027001，帮我退 80 块',
-    expected: '校验 → 客户确认 → 执行回执',
+    title: '售后异常',
+    prompt: 'SO20261027011 的退款被拒了，为什么？我该怎么办？',
+    expected: '售后状态 + 政策依据 + 申诉建议',
   },
   {
     no: '03',
@@ -35,20 +34,7 @@ const ROUTES: readonly DemoRoute[] = [
   },
 ];
 
-const TECH_CHIPS: readonly string[] = [
-  'LangGraph 6 节点',
-  '8 个工具',
-  'RAG 43 篇',
-  '20 单演示数据',
-];
-
-const FLOW_STEPS: readonly string[] = [
-  '路由判断意图',
-  '专业 Agent 调工具',
-  '终审校验防幻觉',
-];
-
-/** 「为什么不是聊天机器人」四步：编号 / 标题 / 一句话说明 */
+/** 「四步把事办完」四步：编号 / 标题 / 一句话说明 */
 interface WhyStep {
   readonly no: string;
   readonly title: string;
@@ -58,27 +44,25 @@ interface WhyStep {
 const WHY_STEPS: readonly WhyStep[] = [
   {
     no: '01',
-    title: 'Router 判意图',
-    detail: '售前 / 售后 / 投诉 / 澄清，先分流再回答',
+    title: '先弄明白你要办什么',
+    detail: '查订单、办售后、投诉，先分清楚再回答',
   },
   {
     no: '02',
-    title: '专家调工具',
-    detail: '单轮命中 1 个专家，handoff 与工具轨迹留痕',
+    title: '查真实数据',
+    detail: '订单、商品、政策都现场查，不编答案',
   },
   {
     no: '03',
-    title: 'Review 校验',
-    detail: '没证据拒答，有知识命中要求 [n]',
+    title: '有据才回答',
+    detail: '没证据就直说；有引用点开可核对原文',
   },
   {
     no: '04',
-    title: '办完再回',
-    detail: '订单卡、退款回执、TK 工单号、来源卡片',
+    title: '给出结果和下一步',
+    detail: '能办的给回执，办不了的给清楚路径',
   },
 ];
-
-const EXPERTS: readonly string[] = ['售前', '售后', '投诉', '澄清'];
 
 /** 能力行：标签 / 说明 */
 interface CapabilityRow {
@@ -87,14 +71,14 @@ interface CapabilityRow {
 }
 
 const CAPABILITY_ROWS: readonly CapabilityRow[] = [
-  { label: '敏感操作', value: 'validate → 顾客确认 → execute' },
-  { label: '引用溯源', value: '回答带 [n]，点开可回查原文' },
+  { label: '确认后办理', value: '改地址 / 拦截 / 退换，你确认了才执行' },
+  { label: '有据可查', value: '回答带 [n]，点开可看原文' },
 ];
 
 /**
- * 空状态演示向导：一句话价值主张 + 技术底牌 + 3 分钟演示路线 + 能力卡片 + 工作流
+ * 空状态演示向导：一句话价值主张 + 三条高频任务 + 能力卡片 + 办理流程
  * 点击「开始」直接发送预设问题，跳过「先输入再回车」的演示摩擦
- * ≥lg 两栏：左侧路线 + 能力卡，右侧「为什么不是聊天机器人」机制卡
+ * ≥lg 两栏：左侧路线 + 能力卡，右侧「四步把事办完」说明卡
  */
 export function DemoGuide({
   onRun,
@@ -108,45 +92,20 @@ export function DemoGuide({
       {/* 价值主张 */}
       <div className="space-y-1.5">
         <p className="text-[11px] font-semibold tracking-[0.18em] text-brand-600">
-          电商客服 Agent · 比赛演示
+          电商智能客服
         </p>
         <h1 className="text-2xl font-semibold text-ink">不只是聊天，是能把事办完</h1>
         <p className="mx-auto max-w-xl text-sm leading-relaxed text-ink-muted">
-          售前选品推荐、售后查单退款、投诉建单，全在一个对话框里完成。每一次工具调用、每一条知识引用，都能回查。
+          售前选品推荐、售后查单与受阻诊断、投诉建单，全在一个对话框里完成。每条回答都有据可查。
         </p>
-      </div>
-
-      {/* 技术底牌 */}
-      <div className="flex flex-wrap items-center justify-center gap-1.5">
-        {TECH_CHIPS.map((chip) => (
-          <span
-            key={chip}
-            className="rounded-full border border-line bg-surface px-2.5 py-0.5 text-[11px] text-ink-muted"
-          >
-            {chip}
-          </span>
-        ))}
-      </div>
-
-      {/* 工作流：一句话说明多 Agent 怎么跑 */}
-      <div className="flex flex-wrap items-center justify-center gap-1.5 text-[11px] text-ink-subtle">
-        <span>工作方式：</span>
-        {FLOW_STEPS.map((step, i) => (
-          <span key={step} className="flex items-center gap-1.5">
-            {i > 0 && <span aria-hidden="true">→</span>}
-            <span className="rounded-full bg-surface-subtle px-2 py-0.5 text-ink-muted">
-              {step}
-            </span>
-          </span>
-        ))}
       </div>
 
       {/* 桌面两栏（<lg 单列：路线在前，机制卡在后） */}
       <div className="mt-1 grid w-full gap-4 text-left lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] lg:items-start">
-        {/* 左栏：3 分钟演示路线 + 能力卡片 */}
+        {/* 左栏：三条高频任务 + 能力卡片 */}
         <div className="flex min-w-0 flex-col gap-3">
           <div className="flex w-full items-baseline justify-between gap-2 px-0.5">
-            <h2 className="text-sm font-semibold text-ink">3 分钟演示路线</h2>
+            <h2 className="text-sm font-semibold text-ink">三条高频任务</h2>
             <span className="text-[11px] text-ink-subtle">点「开始」直接发送</span>
           </div>
 
@@ -194,10 +153,10 @@ export function DemoGuide({
           <ScenarioCards onRun={onRun} disabled={busy} />
         </div>
 
-        {/* 右栏：为什么不是聊天机器人 */}
+        {/* 右栏：四步把事办完 */}
         <Card className="w-full overflow-hidden p-0">
           <div className="flex h-full flex-col p-4">
-            <h2 className="text-sm font-semibold text-ink">为什么不是聊天机器人</h2>
+            <h2 className="text-sm font-semibold text-ink">四步把事办完</h2>
 
             <ol className="mt-3 space-y-2.5">
               {WHY_STEPS.map((step) => (
@@ -218,18 +177,7 @@ export function DemoGuide({
               ))}
             </ol>
 
-            <div className="mt-3 border-t border-line pt-3">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {EXPERTS.map((expert) => (
-                  <Badge key={expert} tone="brand">
-                    {expert}
-                  </Badge>
-                ))}
-              </div>
-              <p className="mt-1.5 text-[11px] text-ink-subtle">4 个专家常驻，单轮命中 1 个</p>
-            </div>
-
-            <div className="mt-3 divide-y divide-line border-t border-line">
+            <div className="mt-3 divide-y divide-line border-t border-line pt-3">
               {CAPABILITY_ROWS.map((row) => (
                 <div
                   key={row.label}

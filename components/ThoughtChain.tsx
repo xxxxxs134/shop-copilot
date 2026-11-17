@@ -30,7 +30,7 @@ const AGENT_META: Record<string, { icon: string; label: string }> = {
  * 专家步骤展示工具调用轨迹；Review 只给裁决，不重复整段回复。
  */
 export function ThoughtChain({ steps }: { steps: ThoughtStep[] }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
 
   const specialist = steps.find((s) => EXPERT_KEYS.includes(s.agent));

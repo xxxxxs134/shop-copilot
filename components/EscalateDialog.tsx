@@ -8,7 +8,7 @@ import { Button } from './ui/Button';
  * 生成处理方案确认对话框（运营助手入口）
  *
  * 填写补充说明（选填）→ 确认后由 ChatWindow 调 /api/v1/escalate 生成情况摘要/建议动作/可复制话术。
- * 生成期间按钮显示「生成中…」并禁用（与 RefundDialog 加载态一致）。
+ * 生成期间按钮显示「生成中…」并禁用（与其他弹窗加载态一致）。
  */
 export function EscalateDialog({
   pending,

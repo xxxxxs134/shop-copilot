@@ -13,8 +13,8 @@ interface QuickStart {
 }
 
 const QUICK_STARTS: readonly QuickStart[] = [
-  { label: '查订单', prompt: 'SO20261027009 到哪了？' },
-  { label: '办退款', prompt: '订单 SO20261027001，帮我退 80 块' },
+  { label: '拦截物流', prompt: 'SO20261027007 地址填错了，已经发货了，能帮我拦截吗？' },
+  { label: '退款被拒', prompt: 'SO20261027011 的退款被拒了，为什么？我该怎么办？' },
   { label: '投诉建单', prompt: '等了一周还没到，太失望了，我要投诉！' },
 ];
 

@@ -12,7 +12,7 @@ interface SidebarEntry {
 
 const NAV_ITEMS: readonly SidebarEntry[] = [
   { icon: '💬', label: '客服对话', href: '/chat' },
-  { icon: '📦', label: '知识库', href: '/kb' },
+  { icon: '📚', label: '知识库后台', href: '/kb' },
   { icon: '🧭', label: '系统概览', href: '/overview' },
 ];
 
@@ -51,7 +51,7 @@ export function WorkspaceSidebar() {
       </nav>
 
       <div className="mt-auto border-t border-line px-5 py-3 text-xs leading-relaxed text-ink-subtle">
-        比赛演示版 · 本地种子数据
+        本地种子数据 · 未接真实店铺
       </div>
     </aside>
   );

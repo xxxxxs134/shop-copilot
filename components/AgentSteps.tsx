@@ -26,7 +26,7 @@ const TOOL_LABELS: Record<string, string> = {
   policy_check: '合规检查',
   order_lookup: '订单查询',
   product_lookup: '商品查询',
-  refund_flow: '退款流程',
+  refund_flow: '退款预检',
   modify_address: '地址修改',
   intercept_logistics: '物流拦截',
   return_exchange: '退换货',
@@ -39,7 +39,7 @@ const TOOL_ICONS: Record<string, string> = {
   policy_check: '🛡️',
   order_lookup: '📦',
   product_lookup: '🛍️',
-  refund_flow: '💰',
+  refund_flow: '🧾',
   modify_address: '📬',
   intercept_logistics: '🚚',
   return_exchange: '📦',
@@ -51,7 +51,7 @@ const TOOL_REASONS: Record<string, string> = {
   product_lookup: '用户询问商品信息，查询商品数据',
   kb_search: '需要知识库内容辅助回答',
   data_query: '用户需要经营数据分析',
-  refund_flow: '处理退款操作',
+  refund_flow: '检查退款资格与售后规则，不执行退款',
   modify_address: '处理地址修改操作',
   intercept_logistics: '处理物流拦截操作',
   return_exchange: '处理退换货操作',
@@ -88,11 +88,10 @@ function parseOrderData(summary: unknown): Record<string, unknown> | null {
 }
 
 /** 可出办理回执的行动类工具（与 TOOL_ACTION 一一对应） */
-const ACTION_TOOLS = ['refund_flow', 'modify_address', 'intercept_logistics', 'return_exchange'];
+const ACTION_TOOLS = ['modify_address', 'intercept_logistics', 'return_exchange'];
 
 /** 行动类工具名 → 办理回执卡片类型 */
 const TOOL_ACTION: Record<string, ActionKind> = {
-  refund_flow: 'refund',
   modify_address: 'modify_address',
   intercept_logistics: 'intercept',
   return_exchange: 'return_exchange',
@@ -101,7 +100,7 @@ const TOOL_ACTION: Record<string, ActionKind> = {
 /**
  * 解析行动类工具的办理结果：summary 为 JSON 且含 receipt 字段或 ok: true 时，
  * 返回 ActionResultCard 所需的 action + data，否则返回 null。
- * refund_flow 的 validate 段（needs_confirm 预览）不是办理结果，不出卡。
+ * refund_flow 只做资格预检，不是办理结果，不出卡。
  */
 function parseActionResult(
   step: AgentStep,
@@ -130,7 +129,7 @@ function parseActionResult(
  * 渲染 Agent 运行过程中的工具调用轨迹，让用户看见「AI 在想什么、做了什么」。
  * 设计参考：OmniMerchant trace / merchant-agent 进度回调 → 简化为步骤卡片。
  */
-export function AgentSteps({ steps, onOrderAction }: { steps: AgentStep[]; onOrderAction?: (order: { order_id: string; product: string; buyer: string; amount: number; status: string; date: string }) => void }) {
+export function AgentSteps({ steps }: { steps: AgentStep[] }) {
   if (steps.length === 0) return null;
 
   const stepCount = steps.length;
@@ -144,7 +143,7 @@ export function AgentSteps({ steps, onOrderAction }: { steps: AgentStep[]; onOrd
               ↓
             </div>
           )}
-          <StepCard step={step} onOrderAction={onOrderAction} />
+          <StepCard step={step} />
         </Fragment>
       ))}
       <div className="flex items-center gap-2 rounded-card border border-line bg-surface-muted px-3 py-2 text-xs text-ink-muted">
@@ -154,7 +153,7 @@ export function AgentSteps({ steps, onOrderAction }: { steps: AgentStep[]; onOrd
   );
 }
 
-function StepCard({ step, onOrderAction }: { step: AgentStep; onOrderAction?: (order: { order_id: string; product: string; buyer: string; amount: number; status: string; date: string }) => void }) {
+function StepCard({ step }: { step: AgentStep }) {
   const [expanded, setExpanded] = useState(false);
   const label = TOOL_LABELS[step.tool] ?? step.tool;
   const icon = TOOL_ICONS[step.tool] ?? '🔧';
@@ -204,8 +203,8 @@ function StepCard({ step, onOrderAction }: { step: AgentStep; onOrderAction?: (o
         </span>
       </button>
 
-      {/* 订单查询结果卡：无需展开即可看到，便于直接发起退款 */}
-      {orderData && <OrderResultCard data={orderData} onAction={onOrderAction} />}
+      {/* 订单查询结果卡：无需展开即可看到 */}
+      {orderData && <OrderResultCard data={orderData} />}
 
       {/* 展开区：推理理由 + 完整参数 + result summary + 结果卡片 */}
       {expanded && (

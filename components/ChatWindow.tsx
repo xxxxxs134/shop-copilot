@@ -10,7 +10,6 @@ import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { CitationCard } from './CitationCard';
 import { OrderDetailCard } from './OrderDetailCard';
-import { RefundDialog } from './RefundDialog';
 import { EscalationCard } from './EscalationCard';
 import { EscalateDialog } from './EscalateDialog';
 import { runAgentStream } from '@/lib/agentRun';
@@ -63,7 +62,6 @@ export function ChatWindow() {
 
   // ── 订单号检测（useMemo 派生，不触发 setState-in-effect）──
   const [dismissedOrder, setDismissedOrder] = useState<string | null>(null);
-  const [refundOrder, setRefundOrder] = useState<{ order_id: string; product: string; buyer: string; amount: number; status: string; date: string } | null>(null);
   const rawDetectedOrder = useMemo(() => {
     const allText = agentMessages
       .map((m) => (typeof m.content === "string" ? m.content : ""))
@@ -97,6 +95,15 @@ export function ChatWindow() {
           content,
           ...(typeof m.intent === 'object' && m.intent !== null
             ? { intent: m.intent as AgentMessage['intent'] }
+            : {}),
+          ...(Array.isArray(m.thoughtChain) && m.thoughtChain.length > 0
+            ? { thoughtChain: m.thoughtChain as AgentMessage['thoughtChain'] }
+            : {}),
+          ...(Array.isArray(m.steps) && m.steps.length > 0
+            ? { steps: m.steps as AgentMessage['steps'] }
+            : {}),
+          ...(Array.isArray(m.kbHits) && m.kbHits.length > 0
+            ? { kbHits: m.kbHits as AgentMessage['kbHits'] }
             : {}),
         };
       });
@@ -480,10 +487,11 @@ export function ChatWindow() {
       {/* 主聊天列 */}
       <div className="relative flex min-w-0 flex-1 flex-col">
         {detectedOrder && (
-          <OrderDetailCard orderId={detectedOrder} onClose={() => setDismissedOrder(detectedOrder)} />
-        )}
-        {refundOrder && (
-          <RefundDialog order={refundOrder} onClose={() => setRefundOrder(null)} />
+          <OrderDetailCard
+            orderId={detectedOrder}
+            refreshKey={agentStreaming ? 1 : 0}
+            onClose={() => setDismissedOrder(detectedOrder)}
+          />
         )}
         <div className="flex h-full w-full flex-1 flex-col">
           {/* 顶栏：当前会话标题 + 模式切换 + 新建会话 */}
@@ -491,7 +499,7 @@ export function ChatWindow() {
             <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <h1 className="truncate text-sm font-semibold text-ink">{headerTitle}</h1>
-                <p className="mt-0.5 truncate text-xs text-ink-subtle">LangGraph 多 Agent 客服</p>
+                <p className="mt-0.5 truncate text-xs text-ink-subtle">售前 · 售后 · 投诉，一个对话框办完</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {/* 新建会话（空状态隐藏：会话侧栏已有入口） */}
@@ -546,7 +554,7 @@ export function ChatWindow() {
                   {agentMessages.map((m, i) => (
                     <div key={i} className="space-y-2">
                       {m.steps && m.steps.length > 0 && (
-                        <AgentSteps steps={m.steps} onOrderAction={setRefundOrder} />
+                        <AgentSteps steps={m.steps} />
                       )}
                       {m.thoughtChain && m.thoughtChain.length > 0 && (
                         <ThoughtChain steps={m.thoughtChain} />
@@ -666,7 +674,7 @@ export function ChatWindow() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="试试：SO20261027009 到哪了 / 退我 80 块 / 我要投诉…"
+                  placeholder="试试：SO20261027007 能拦截吗 / 确认拦截 / 退我 80 块…"
                   rows={2}
                   className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-subtle"
                 />

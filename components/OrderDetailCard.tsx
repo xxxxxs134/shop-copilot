@@ -14,21 +14,43 @@ interface OrderDetail {
   timeline: Array<{ date: string; label: string; status: string; detail?: string }>;
 }
 
-export function OrderDetailCard({ orderId, onClose }: { orderId: string; onClose: () => void }) {
-  const [order, setOrder] = useState<OrderDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+export function OrderDetailCard({
+  orderId,
+  refreshKey = 0,
+  onClose,
+}: {
+  orderId: string;
+  refreshKey?: number;
+  onClose: () => void;
+}) {
+  const requestKey = `${orderId}:${refreshKey}`;
+  const [result, setResult] = useState<{
+    key: string;
+    order: OrderDetail | null;
+    error: boolean;
+  } | null>(null);
+  const isCurrent = result?.key === requestKey;
+  const loading = !isCurrent;
+  const error = isCurrent && result.error;
+  const order = isCurrent ? result.order : null;
 
   useEffect(() => {
+    let cancelled = false;
     fetch(`/api/v1/data/order/${orderId}`)
       .then((r) => {
         if (!r.ok) throw new Error("not found");
         return r.json();
       })
-      .then((d: OrderDetail) => setOrder(d))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [orderId]);
+      .then((d: OrderDetail) => {
+        if (!cancelled) setResult({ key: requestKey, order: d, error: false });
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ key: requestKey, order: null, error: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, requestKey]);
 
   return (
     <div className="absolute right-0 top-0 z-20 h-full w-72 border-l border-slate-200 bg-white shadow-xl">

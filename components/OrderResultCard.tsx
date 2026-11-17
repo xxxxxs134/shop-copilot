@@ -22,17 +22,9 @@ function productName(data: Record<string, unknown>): string {
  *
  * 一行摘要（订单号 · 商品 · 状态徽章）+ 一行明细（买家 · 金额 · 日期）。
  */
-export function OrderResultCard({ data, onAction }: { data: Record<string, unknown>; onAction?: (order: { order_id: string; product: string; buyer: string; amount: number; status: string; date: string }) => void }) {
+export function OrderResultCard({ data }: { data: Record<string, unknown> }) {
   const product = productName(data);
   const created = typeof data.created_at === 'string' ? data.created_at : '';
-  const status = String(data.status ?? '');
-  const refundable = [
-    'paid', 'shipped', 'received', 'refunding', 'rejected',
-    '已支付', '已发货', '已收货', '退款中', '已拒绝',
-  ].includes(status);
-  const refundActionLabel = ['refunding', 'rejected', '退款中', '已拒绝'].includes(status)
-    ? '处理退款'
-    : '发起退款';
 
   return (
     <div className="mt-1 rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
@@ -53,24 +45,6 @@ export function OrderResultCard({ data, onAction }: { data: Record<string, unkno
     买家 {String(data.buyer ?? '—')} · ¥{String(data.amount ?? '—')}
     {created ? ` · ${created}` : ''}
   </div>
-  {onAction && refundable && (
-    <button
-      type="button"
-      onClick={() =>
-        onAction({
-          order_id: String(data.order_id ?? ''),
-          product,
-          buyer: String(data.buyer ?? ''),
-          amount: Number(data.amount ?? 0),
-          status,
-          date: created,
-        })
-      }
-      className="mt-2 w-full rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700"
-    >
-      💰 {refundActionLabel}
-    </button>
-  )}
 </div>
   );
 }

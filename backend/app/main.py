@@ -32,7 +32,6 @@ from .api_intent import router as intent_router
 from .api_kb import router as kb_router
 from .api_workspace import router as workspace_router
 from .api_data import router as data_router
-from .api_refund import router as refund_router
 from .api_escalation import router as escalation_router
 from .errors import (
     ProblemException,
@@ -101,7 +100,6 @@ app.include_router(intent_router)
 app.include_router(kb_router)
 app.include_router(workspace_router)
 app.include_router(data_router)
-app.include_router(refund_router)
 app.include_router(escalation_router)
 
 # 统一错误协议（RFC 9457 problem+json），见 docs/plan-error-handling.md

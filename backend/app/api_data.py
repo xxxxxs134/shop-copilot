@@ -99,19 +99,28 @@ async def get_order_detail(order_id: str) -> dict:
             timeline.append(
                 {"date": date, "label": "支付", "status": "done", "detail": f"已支付 ¥{amount:.2f}"}
             )
-        if status in ("shipped", "received", "refunding", "refunded", "rejected"):
+        if status in ("shipped", "intercepted", "received", "refunding", "refunded", "rejected"):
             carrier = str(o.get("carrier") or "")
             tracking = str(o.get("tracking_no") or "")
             if carrier and tracking:
                 ship_detail = f"{carrier} · {tracking}"
             elif carrier:
                 ship_detail = carrier
-            elif status in ("shipped", "received"):
+            elif status in ("shipped", "intercepted", "received"):
                 ship_detail = "已交付承运商"
             else:
                 ship_detail = "订单已进入售后流程"
             timeline.append(
                 {"date": date, "label": "发货", "status": "done", "detail": ship_detail}
+            )
+        if status == "intercepted":
+            timeline.append(
+                {
+                    "date": date,
+                    "label": "物流拦截",
+                    "status": "current",
+                    "detail": "包裹已拦截，等待退回处理",
+                }
             )
         if status == "received":
             timeline.append(

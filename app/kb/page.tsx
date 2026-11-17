@@ -533,8 +533,8 @@ export default function KbPage() {
               返回客服对话
             </Link>
             <PageHeader
-              title="知识库"
-              description="编辑切片，保存即生效"
+              title="知识库后台"
+              description="商家侧知识运营：维护商品知识与售后政策，保存后客户 Agent 下一次回答即生效"
               actions={
                 <Button
                   variant="secondary"

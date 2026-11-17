@@ -63,7 +63,7 @@ const STAGES: readonly Stage[] = [
   {
     no: '04',
     title: '回执或引用',
-    desc: '订单卡、退款回执、TK 工单号、[n] 来源卡片',
+    desc: '订单卡、售后诊断、TK 工单号、[n] 来源卡片',
   },
 ];
 
@@ -81,7 +81,7 @@ interface QualityRow {
 const QUALITY_ROWS: readonly QualityRow[] = [
   { label: '检索自测', value: '90%', detail: '9 / 10' },
   { label: 'RAG 评测 v2', value: '29 / 30', detail: '无 RAG 30/30，增量在私有规则与引用' },
-  { label: '交付冒烟', value: '9 / 9' },
+  { label: '交付冒烟', value: '10 / 10' },
   { label: 'tsc · eslint · build', badge: '全绿', mono: true },
 ];
 
@@ -129,15 +129,15 @@ interface DemoRoute {
 const DEMO_ROUTES: readonly DemoRoute[] = [
   {
     no: '01',
-    title: '查订单',
-    prompt: 'SO20261027009 到哪了？',
-    result: '订单卡 + 物流 + 运单号',
+    title: '拦截物流',
+    prompt: 'SO20261027007 地址填错了，已经发货了，能帮我拦截吗？',
+    result: '订单预览 + 二次确认 + 拦截回执',
   },
   {
     no: '02',
-    title: '办退款',
-    prompt: '订单 SO20261027001，帮我退 80 块',
-    result: '预览 80 / 159.8 / 79.8 → 确认 → 回执',
+    title: '售后异常',
+    prompt: 'SO20261027011 的退款被拒了，为什么？我该怎么办？',
+    result: '售后状态 + 政策依据 + 申诉建议',
   },
   {
     no: '03',
@@ -174,18 +174,18 @@ export default function OverviewPage() {
           {/* 页头 */}
           <div className="space-y-1.5">
             <p className="text-[11px] font-semibold tracking-[0.18em] text-brand-600">
-              系统概览 · 比赛演示
+              系统概览 · 客户侧 Agent
             </p>
             <PageHeader
               title="一次看清这套客服 Agent 怎么运转"
-              description="不是聊天页：路由、专家、工具、终审与回执，每一层都能对上证据。"
+              description="不是聊天页：路由、专家、工具、终审与办理结果，每一层都能对上证据。"
               actions={
                 <>
                   <Link href="/chat" className={cn(ACTION_BASE, ACTION_PRIMARY)}>
                     打开客服对话
                   </Link>
                   <Link href="/kb" className={cn(ACTION_BASE, ACTION_SECONDARY)}>
-                    维护知识库
+                    知识库后台
                   </Link>
                 </>
               }
@@ -309,8 +309,7 @@ export default function OverviewPage() {
 
                   <div className="mt-auto border-t border-line pt-3.5 sm:pt-4">
                     <p className="text-[11px] leading-relaxed text-ink-subtle">
-                      演示使用本地 20 单种子数据，退款只改种子库，未接平台真实授权；接真实店铺时实现
-                      DataProvider 契约即可。
+                      演示使用本地 20 单种子数据，售后状态为本地模拟；退款请走平台订单页自助申请，Agent 只做诊断与升级建议。接真实店铺时实现 DataProvider 契约即可。
                     </p>
                   </div>
                 </CardBody>
@@ -361,7 +360,7 @@ export default function OverviewPage() {
 
                 <p className="border-t border-line pt-3 text-[11px] leading-relaxed text-ink-subtle">
                   MCP 独立进程暴露其中 4 个：<span className="font-mono">kb_search</span> + 3
-                  个运营向工具。
+                  个运营向工具。<span className="font-mono">refund_flow</span> 仅做只读预检，不执行退款。
                 </p>
               </CardBody>
             </Card>

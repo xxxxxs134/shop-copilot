@@ -1,20 +1,20 @@
 # 店智 Copilot 🛒
 
-> 店智 Copilot：面向客户的电商智能客服 Agent——售前查商品推荐、售后查订单退款，一个对话框全搞定。
+> 店智 Copilot：面向客户的电商智能客服 Agent——售前查商品推荐、售后拦截物流、查订单与退款受阻诊断，一个对话框全搞定；商家通过知识库后台维护回答依据。
 
-> 支持 LangGraph 多 Agent 编排（售前/售后/投诉升级/澄清 + 终审）、RAG 知识库问答（43 篇语料，回答带 [1][2] 溯源）、两段式退款门控、思维链过程可视化、会话持久化与引用溯源。
+> 支持 LangGraph 多 Agent 编排（售前/售后/投诉升级/澄清 + 终审）、RAG 知识库问答（43 篇语料，回答带 [1][2] 溯源）、退款只读预检、敏感操作两段式门控、思维链过程可视化、会话持久化与引用溯源。
 
-> 事实基线：43 篇知识库语料 · 12 段场景案例 · 20 单种子订单 · 2 个业务入口（客服对话 / 知识库）+ 1 个系统概览页。产品口径以 [docs/positioning.md](./docs/positioning.md) 为唯一真源。
+> 事实基线：43 篇知识库语料 · 12 段场景案例 · 20 单种子订单 · 1 个客户入口（客服对话）+ 1 个商家知识库后台 + 1 个系统概览页。产品口径以 [docs/positioning.md](./docs/positioning.md) 为唯一真源。
 
 ## 🤖 Agent 能做什么（售后处理场景）
 
 | 场景 | 客户说 | Agent 做 | 你得到 |
 |---|---|---|---|
-| 📦 查订单 | "SO20261027009 到哪了" | 调 order_lookup 查状态+物流 | 订单详情+预计到达 |
-| 💰 退款 | "帮我退 80 块" | validate→预览→令牌→等确认 | 执行回执+售后单号 |
-| 📬 改地址 | "帮我改收货地址" | 校验→预览→执行 | 地址修改确认 |
-| 🚚 拦截物流 | "别发货了" | 校验→拦截→执行 | 拦截成功回执 |
-| 📦 退换货 | "我要退货" | 校验→生成单据 | 退货单号+寄回地址 |
+| 📦 查订单 | "SO20261027009 到哪了" | 调 order_lookup 查状态+物流 | 订单详情+物流单号 |
+| 🧾 退款受阻 | "退款被拒了，为什么" | 查订单/售后单 + 检索政策 | 受阻原因+申诉/升级建议 |
+| 📬 改地址 | "帮我改收货地址" | 校验→预览→客户确认→执行 | 地址修改确认 |
+| 🚚 拦截物流 | "地址填错了，已经发货了，能拦截吗" | 查单→校验→客户确认→执行 | 拦截成功回执 |
+| 📦 退换货 | "我要退货" | 校验→客户确认→生成单据 | 退货单号+寄回地址 |
 | 📚 规则 | "退货政策是什么" | RAG 检索 43 篇文档 | 有据回答+[1][2]溯源 |
 | 🤝 投诉处理 | "我要投诉" | 梳理情况+给出建议 | 处理方案：摘要+建议+可复制话术 |
 
@@ -23,14 +23,14 @@
 不只识别"用户想干什么"，还理解"用户是什么状态"：
 - **实体抽取**：从模糊描述中提取订单号、商品、退款原因、金额、时间（"昨天买的有点大的红色鞋子" → 订单号 + 商品=鞋子 + 原因=大了 + 时间=昨天）
 - **情绪识别**：识别焦虑/愤怒/无奈/正向，优先安抚再处理
-- **操作引导**：自动关联可执行操作（退款/退货/改地址/拦截物流）
+- **操作引导**：自动关联售后诊断与可执行操作（退款受阻/退货/改地址/拦截物流）
 
 ## 💡 与同类方案对比
 
 | 维度 | 传统客服系统 | 通用 AI 客服 | 店智 Copilot |
 |---|---|---|---|
-| 咨询方式 | 人工排队 | 纯问答机器人 | **咨询即办理（对话内完成操作）** |
-| 敏感操作 | 人工执行 | 不碰操作 | **两段式门控（validate→confirm→audit）** |
+| 咨询方式 | 人工排队 | 纯问答机器人 | **咨询即办理（改址/拦截/退换）** |
+| 敏感操作 | 人工执行 | 不碰操作 | **两段式门控；退款不越权代办** |
 | 投诉处理 | 直接排队 | 不支持 | **情况摘要+建议+可复制话术** |
 | 知识库 | 静态 FAQ | 不可编辑 | **编辑即生效** |
 | AI 深度 | 无 | 纯聊天 | **RAG+Agent+多模态+MCP** |
@@ -48,7 +48,7 @@
 浏览器 (Next.js)
  │  流式对话 + 多 Agent 面板 + 引用角标[1] + 语音/图片
  ▼
-FastAPI  backend/app/          ← AI 能力唯一接入层（比赛规则要求）
+FastAPI  backend/app/          ← AI 能力唯一接入层
  ├── api/routes                # /v1/chat/completions（RAG问答）
  │                             # /v1/agent/chat（Agent SSE）
  │                             # /v1/vision/caption（GLM-4V 图生文案）
@@ -56,7 +56,7 @@ FastAPI  backend/app/          ← AI 能力唯一接入层（比赛规则要求
  │   ├── graph                 #   StateGraph：router→售前/售后/投诉→终审
  │   ├── router                #   意图路由（售前/售后/投诉/澄清，JSON 模式）
  │   ├── llm                   #   DeepSeek 共享客户端（4 次重试 + JSON 模式）
- │   └── tools                 #   7 个客服工具（kb_search 共用，按工具位 8 个）
+ │   └── tools                 #   7 个客服工具（kb_search 共用，按工具位 8 个；refund_flow 只读预检）
  │                             #   product_lookup / order_lookup / refund_flow
  │                             #   modify_address / intercept_logistics / return_exchange
  ├── rag/                      # 混合检索（jieba BM25 + 向量 RRF 融合）
@@ -98,8 +98,8 @@ npm run dev                             # http://localhost:3000
 
 打开 http://localhost:3000（`/` 自动跳 `/chat`），左侧三个入口跨路由常驻，移动端收成顶部导航：
 
-- **客服对话 `/chat`**：LangGraph 多 Agent 编排。Router 自动判断售前/售后/投诉/澄清，售前查商品推荐、售后查订单退款；回答带 `[1][2]` 角标，**点击弹出来源卡片可溯源核对**；「多 Agent 处理过程」面板展示 4 个专家花名册（命中高亮）、Router 意图、handoff 行、专家工具轨迹与终审裁决；会话栏支持新建/改名/两步确认删除（SQLite `data/app.db` 持久化）
-- **知识库 `/kb`**：43 篇文档的切片列表与行内编辑，商家维护商品知识/售后政策；保存即重新嵌入并失效旧检索；重建索引进度与耗时在 toast 里显示
+- **客服对话 `/chat`**：LangGraph 多 Agent 编排。Router 自动判断售前/售后/投诉/澄清，售前查商品推荐，售后支持拦截物流、查订单与退款受阻诊断；回答带 `[1][2]` 角标，**点击弹出来源卡片可溯源核对**；「多 Agent 处理过程」面板展示 4 个专家花名册（命中高亮）、Router 意图、handoff 行、专家工具轨迹与终审裁决；会话栏支持新建/改名/两步确认删除（SQLite `data/app.db` 持久化）
+- **知识库后台 `/kb`**：商家侧知识运营；43 篇文档的切片列表与行内编辑，维护商品知识/售后政策；保存即重新嵌入并失效旧检索；重建索引进度与耗时在 toast 里显示
 - **系统概览 `/overview`**：只陈述仓库事实基线，展示一次请求的路由/专家/终审流程、质量与边界、10 个注册工具（MCP 暴露 4 个）和 3 条演示路线，不引入虚构指标
 
 其他细节：**Markdown 渲染**（代码块/表格/列表/加粗，消息 hover 可复制、重新生成）；**多模态**（输入框旁 🖼️ 上传商品图 → GLM-4V 生成标题/卖点/描述；🎤 语音输入走浏览器 Web Speech API）。
@@ -112,7 +112,7 @@ npm run dev                             # http://localhost:3000
 2. **接数据源**：新建 `class MyShopProvider`（直连 MySQL/ERP API/CSV 均可），在 `get_provider()` 工厂里注册你的分支。
 3. **切环境变量**：`backend/.env` 设 `DATA_PROVIDER=mys`（默认 `sqlite` 真查种子库，`mock` 为兜底样例；种子库用 `python -m backend.app.agent.seed_store` 重建）。
 
-客服对话的查单、推荐、退款都会经由它取数，工具轨迹照常展示。
+客服对话的查单、推荐、退款预检都会经由它取数，工具轨迹照常展示。
 
 ## 项目结构
 
@@ -128,7 +128,7 @@ backend/
       data_provider.py  # DataProvider Protocol（sqlite 真查 / mock 兜底，.env 切换）
       seed_store.py     # 30 天经营种子库生成器（幂等，data/store.db 不入库）
       tools/__init__.py # Tool dataclass + 注册表
-      __init__.py       # 7 个客服工具实现（检索/商品/订单/退款/改址/拦截/退换）
+      __init__.py       # 7 个客服工具实现（退款仅资格预检，不执行）
     rag/
       pipeline.py       # 语料清洗/分块/嵌入/LanceDB 索引
       retrieve.py       # BM25+向量 RRF 融合检索
@@ -145,20 +145,19 @@ data/
 app/
   page.tsx              # `/` → `/chat` 重定向
   chat/page.tsx         # 客服对话（LangGraph 多 Agent + 多 Agent 面板 + 演示导览）
-  kb/page.tsx           # 知识库（切片编辑即生效）
+  kb/page.tsx           # 商家知识库后台（切片编辑即生效）
   overview/page.tsx     # 系统概览（请求流程 / 质量边界 / 工具注册表 / 演示路线）
   layout.tsx            # 全局壳：左导航 + 移动端顶部导航
   api/agent/route.ts    # Agent SSE 透传代理
   api/vision/route.ts   # 图生文案代理
   api/v1/[...path]/route.ts  # /api/v1/* 同源代理 → FastAPI（会话/溯源，避免浏览器直连 8000）
 components/
-  WorkspaceSidebar.tsx  # 全局左导航（客服对话 / 知识库 / 系统概览）
+  WorkspaceSidebar.tsx  # 全局左导航（客服对话 / 知识库后台 / 系统概览）
   MobileNav.tsx         # <md 顶部横向导航
   ChatWindow.tsx        # 聊天主窗口（会话状态机接入 + 引用溯源 + 语音/图片）
   Sidebar.tsx           # 对话页二级会话栏（新建/改名/两步确认删除/mode 徽章）
-  DemoGuide.tsx         # 空状态演示导览（3 分钟路线，点「开始」直接发送）
-  ScenarioCards.tsx     # 4 张能力卡（售前推荐 / 查订单 / 退款退货 / 投诉建议，点击直接发送）
-  RefundDialog.tsx      # 退款门控弹窗（校验 → 确认 → 回执）
+  DemoGuide.tsx         # 空状态演示导览（三条高频任务，点「开始」直接发送）
+  ScenarioCards.tsx     # 4 张能力卡（售前推荐 / 拦截物流 / 退款受阻 / 投诉升级，点击直接发送）
   ThoughtChain.tsx      # 多 Agent 处理过程面板（router→specialist→review 思维链）
   ui/                   # Button / Badge / Card / PageHeader / EmptyState / Skeleton / PageContainer
   MarkdownText.tsx      # Markdown 渲染（fence-aware 预处理 + [n]→可点角标）

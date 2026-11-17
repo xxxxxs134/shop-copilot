@@ -2,7 +2,7 @@
 
 P4 四件套：kb_search / data_query / copywriting / policy_check
 P5 新增（docs/plan-p5.md §3.3）：product_lookup / order_lookup / refund_flow
-  （refund_flow 两段式：validate 后端校验发令牌 → 用户确认 → execute 凭令牌执行）
+（refund_flow 只读预检：validate 校验订单/金额/售后期，execute 已停用）
 咨询即办理新增：modify_address / intercept_logistics / return_exchange
   （同一两段式模式：改订单地址 / 拦截物流 / 生成退换货单据）
 
@@ -33,7 +33,7 @@ def _kb_search(query: str) -> str:
             "index": i,
             "title": h.title,
             "category": h.category,
-            "text": h.text[:400],  # 截断，避免 tool message 过长
+            "text": h.text[:800],  # 截断，避免 tool message 过长（种子切片 ≤600 字，800 保证整段可见）
         })
     return json.dumps({"found": True, "items": items}, ensure_ascii=False)
 
@@ -55,7 +55,6 @@ from .data_provider import (
     aftersales_json,
     execute_address_json,
     execute_intercept_json,
-    execute_refund_json,
     execute_return_json,
     orders_json,
     products_json,
@@ -195,48 +194,40 @@ def _refund_flow(
     action: str,
     order_id: str,
     amount: float | int | str | None = None,
-    token: str | None = None,
 ) -> str:
-    """两段式退款：validate 后端校验并发令牌 → 用户确认 → execute 凭令牌执行（幂等）。
+    """退款资格预检（只读）：校验订单/金额/时效，不执行退款。
 
-    所有业务校验都在后端（data_provider._refund_violations），不信任模型传参；
-    模型只负责把 preview 复述给用户并征求确认。
+    平台订单页已支持客户自助申请，客服 Agent 只负责解释规则与诊断受阻；
+    execute 已停用，避免客户单方确认就动商家资金。
     """
-    if action not in ("validate", "execute"):
+    if action != "validate":
         return json.dumps(
-            {"ok": False, "violations": [f"action 必须是 validate 或 execute，收到: {action!r}"]},
+            {
+                "ok": False,
+                "violations": ["退款执行已停用：请引导客户到平台订单页自助申请，Agent 只做资格预检与受阻诊断"],
+            },
             ensure_ascii=False,
         )
-    if action == "validate":
-        if amount is None:
-            return json.dumps(
-                {"ok": False, "violations": ["validate 需要 amount 参数（退款金额）"]},
-                ensure_ascii=False,
-            )
-        return validate_refund_json(order_id, amount)
-    if not token:
+    if amount is None:
         return json.dumps(
-            {"ok": False, "violations": ['execute 需要 token 参数（先调 validate 获取确认令牌）']},
+            {"ok": False, "violations": ["validate 需要 amount 参数（退款金额）"]},
             ensure_ascii=False,
         )
-    return execute_refund_json(order_id, token)
+    return validate_refund_json(order_id, amount)
 
 
 register(Tool(
     name="refund_flow",
     description=(
-        "两段式退款（必须先 validate 再 execute）："
-        "action='validate' 后端校验订单并返回 {token, preview}，preview 字段含义固定："
-        "amount=本次退款金额、paid_amount=订单实付金额、after_amount=退款后剩余可退金额；"
-        "把 preview 复述给用户问「确认退款吗？」，复述时不得混用这三个字段；"
-        "用户确认后 action='execute' 携带 token 执行退款并返回回执。"
-        "校验不过返回 {ok:false, violations}，请原样转述；重复 execute 返回幂等「已退款」回执。"
+        "退款资格预检（只读，不执行退款）：action='validate' 校验订单/金额/售后期，返回 {preview, violations}。"
+        "preview 字段含义固定：amount=本次退款金额、paid_amount=订单实付金额、after_amount=退款后剩余可退金额。"
+        "不要把预检说成退款成功，不要承诺到账；正常退款引导客户去平台订单页自助申请，"
+        "被拒/超时/争议时结合政策给申诉或升级建议。execute 已停用。"
     ),
     parameters=param_schema(
-        action={"type": "string", "enum": ["validate", "execute"], "description": "validate=校验并发令牌；execute=凭令牌执行"},
+        action={"type": "string", "enum": ["validate"], "description": "仅支持 validate=资格预检"},
         order_id={"type": "string", "description": "订单号"},
-        amount={"type": "number", "description": "退款金额（validate 必填；execute 忽略，以令牌锁定金额为准）"},
-        token={"type": "string", "description": "validate 返回的确认令牌（execute 必填，10 分钟内有效、一次性）"},
+        amount={"type": "number", "description": "拟退款金额"},
         required=["action", "order_id"],
     ),
     fn=_refund_flow,

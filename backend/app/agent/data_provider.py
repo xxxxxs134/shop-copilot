@@ -8,7 +8,7 @@
 
 P5 扩展（docs/plan-p5.md §3.2）：Protocol 新增 5 个**可选**方法
 - get_products / get_orders / get_aftersales —— 业务查询（商品/订单/售后）
-- validate_refund / execute_refund —— 两段式退款（校验发令牌 / 凭令牌执行）
+- validate_refund —— 退款资格预检（只读，不签发令牌；execute_refund 已停用）
 - 未实现这些方法的老 Provider 不会崩：工具层经 products_json 等包装函数
   降级返回 {"ok": false, "error": "..."}；get_snapshot 契约保持不变。
 
@@ -77,7 +77,7 @@ class DataProvider(Protocol):
     def execute_return(self, order_id: str, token: str) -> dict: ...
 
 
-# ────────────────── 退款两段式共用逻辑（Mock / Sqlite 通用） ─────────────────
+# ────────────── 退款预检 / 历史执行共用逻辑（Mock / Sqlite 通用） ──────────────
 
 _refund_tokens: dict[str, dict] = {}  # token → {order_id, amount, expires_at}（进程内存，跨轮对话复用）
 
@@ -181,18 +181,14 @@ def _refund_preview(order: dict, amount: float) -> dict:
 
 
 def _run_validate(order: dict | None, amount: object, aftersales_done: bool) -> dict:
-    """validate 段：通过 → 发令牌 + 预览；不通过 → {ok:false, violations:[...]}。"""
+    """退款资格预检：通过 → 预览；不通过 → {ok:false, violations:[...]}（只读，不签发令牌）。"""
     violations = _refund_violations(order, amount, aftersales_done)
     coerced = _coerce_amount(amount)
     if violations or order is None or coerced is None:
         return {"ok": False, "violations": violations or ["订单不存在或无权查询"]}
-    locked = round(coerced, 2)
-    token = _issue_refund_token(str(order["order_id"]), locked)
     return {
         "ok": True,
-        "needs_confirm": True,
-        "token": token,
-        "preview": _refund_preview(order, locked),
+        "preview": _refund_preview(order, round(coerced, 2)),
     }
 
 
@@ -864,7 +860,7 @@ class SqliteStoreProvider:
             conn.close()
 
     def execute_refund(self, order_id: str, token: str) -> dict:
-        """退款执行段：幂等检查 → 令牌校验 → 更新 aftersales + orders → 回执。"""
+        """历史退款执行段（主链路与 API 已停用）：幂等检查 → 令牌校验 → 更新 aftersales + orders → 回执。"""
         oid = str(order_id)
         conn = self._connect()
         try:
@@ -1103,12 +1099,12 @@ def aftersales_json(order_id: str | None = None) -> str:
 
 
 def validate_refund_json(order_id: str, amount: object = None) -> str:
-    """给 refund_flow validate 段用：校验结果（含令牌/预览或违规）→ JSON 字符串。"""
+    """给 refund_flow 用：退款资格预检结果（预览或违规）→ JSON 字符串（只读，不签发令牌）。"""
     return _dict_result("validate_refund", order_id, amount)
 
 
 def execute_refund_json(order_id: str, token: str) -> str:
-    """给 refund_flow execute 段用：执行回执（或违规/幂等回执）→ JSON 字符串。"""
+    """历史 execute 段（主链路与 API 已停用）：执行回执（或违规/幂等回执）→ JSON 字符串。"""
     return _dict_result("execute_refund", order_id, token)
 
 

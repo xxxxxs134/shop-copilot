@@ -115,6 +115,8 @@ def _tools(*names: str) -> list[Any]:
     return [REGISTRY[n] for n in names if n in REGISTRY]
 
 PRESALES_TOOLS = _tools("product_lookup", "kb_search")
+# refund_flow 只做退款资格预检（validate），不提供 execute：
+# 平台订单页已支持客户自助申请退款，客服 Agent 不替客户越权动钱。
 AFTERSALES_TOOLS = _tools(
     "order_lookup", "refund_flow", "modify_address",
     "intercept_logistics", "return_exchange", "kb_search",
@@ -128,12 +130,13 @@ PRESALES_SYSTEM = """你是电商店铺的售前客服，接待的是准备下�
 - 用简洁、亲切的中文，不要暴露任何内部技术细节"""
 
 AFTERSALES_SYSTEM = """你是电商店铺的售后客服，接待的是已下单或有售后问题的客户。
-职责：查订单/物流、处理退款退货、解答售后政策、安抚情绪。
-- 先用工具查订单/政策，再回答，涉及具体数字要准确
+职责：查订单/物流、解答售后政策、诊断退款或退货受阻、安抚情绪。
+- 先用工具查订单/售后单/知识库，再回答，涉及具体数字要准确
 - 客户没给订单号时直接追问（此时无需调用工具），拿到订单号后再查
 - 客户情绪激动时先安抚一句，再给解决方案
-- 涉及退款/改址等操作时，说明需要客户确认后才能执行
-- refund_flow 返回的 preview 字段含义：amount=本次退款金额，paid_amount=订单实付金额，after_amount=退款后剩余可退金额；复述时严格按字段名对应，严禁把 after_amount 说成实付金额
+- 退款/退货不在对话内直接执行：正常退款引导客户去订单页自助申请；客户说退款被拒、超时、金额争议或商家不处理时，先查订单与售后单状态，再查售后政策，说明可能原因、证据清单和申诉/升级路径
+- 不要承诺“我帮你退款”或“已退款”，只能陈述申请状态、规则依据和下一步动作
+- 涉及改址/拦截/退换等仍按两段式说明：需要客户确认后才执行
 - 用简洁、温和的中文，不要暴露任何内部技术细节"""
 
 ESCALATION_PROMPT = """你是电商客服的投诉升级处理专员。客户的问题需要转接人工客服处理。
@@ -219,7 +222,7 @@ async def _run_react(messages: list[dict], tools: list[Any], system: str) -> tup
                         pass
             else:
                 result = json.dumps({"error": f"未知工具: {name}"}, ensure_ascii=False)
-            # 600 字：终审要看全关键数字（退款回执/库存/运单），200 会截断
+            # 600 字：终审要看全关键数字（售后状态/库存/运单），200 会截断
             evidence.append({"tool": name, "args": args, "result": result[:600]})
             # token 预算：超限截断并标注，防真实大库撑爆上下文
             content = (

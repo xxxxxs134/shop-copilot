@@ -40,18 +40,18 @@
     <div class="kicker">2026 年竞赛作品介绍文档</div>
     <h1>店智 Copilot</h1>
     <div class="rule"></div>
-    <p class="subtitle">面向客户的电商智能客服 Agent<br>售前查商品推荐 · 售后查订单退款 · 投诉升级工单</p>
+    <p class="subtitle">面向客户的电商智能客服 Agent<br>售前查商品推荐 · 售后查订单与退款受阻 · 投诉升级工单</p>
     <div class="meta">团队：邢博、刘庆昊、孔克铮<br>学校：河北传媒学院<br>专业：人工智能<br>提交日期：2026 年 11 月</div>
   </section>
 <p><strong>团队信息</strong>：邢博、刘庆昊、孔克铮 / 河北传媒学院 / 人工智能</p>
 <blockquote>
-<p>售前查商品推荐、售后查订单退款、投诉生成工单，一个对话框全搞定。不是只会聊天的问答工具，而是能调用工具、能校验、能溯源、敏感操作需客户确认的智能客服。</p>
+<p>售前查商品推荐、售后查订单与退款受阻、投诉生成工单，一个对话框全搞定。不是只会聊天的问答工具，而是能调用工具、能校验、能溯源、敏感操作需客户确认的智能客服。</p>
 </blockquote>
 <h2>一、项目详情及使用方式</h2>
-<p>店智 Copilot 面向电商店铺的<strong>客户</strong>（下单前咨询、下单后查单退款投诉），解决"问商品、查订单、办售后"反复在多个页面之间切换的问题。系统把服务收进两个业务入口，并提供独立的系统概览页 <code>/overview</code>：</p>
+<p>店智 Copilot 面向电商店铺的<strong>客户</strong>（下单前咨询、下单后查单与售后受阻、投诉），解决"问商品、查订单、办售后"反复在多个页面之间切换的问题。产品由 1 个客户入口、1 个商家知识库后台和 1 个系统概览页组成：</p>
 <ul>
 <li><strong>客服对话 <code>/chat</code></strong>：LangGraph 多 Agent 编排，Router 自动判断售前/售后/投诉/澄清，调用对应工具，回答带 <code>[n]</code> 引用可溯源。</li>
-<li><strong>知识库 <code>/kb</code></strong>：43 篇运营知识文档，商家维护商品知识/售后政策，Agent 据此回答；支持切片编辑，保存后重新嵌入并失效旧检索。</li>
+<li><strong>知识库后台 <code>/kb</code></strong>：商家侧知识运营，不是客户功能；43 篇运营知识文档，商家维护商品知识/售后政策，客户 Agent 据此回答；支持切片编辑，保存后重新嵌入并失效旧检索。</li>
 </ul>
 <p>项目自带 20 单模拟订单、12 个 SKU 和 43 篇知识库语料，不依赖真实平台授权。启动方式：</p>
 <pre><code class="language-bash">pip install -r backend/requirements.txt
@@ -64,14 +64,14 @@ uvicorn backend.app.main:app --port 8000
 <pre><code class="language-bash">npm install
 npm run dev
 </code></pre>
-<p>打开 <code>http://localhost:3000</code>（<code>/</code> 自动跳 <code>/chat</code>），按"客服对话 → 售前咨询 → 查订单 → 退款门控 → 投诉升级 → 知识库编辑"的顺序即可完成演示。</p>
-<p><img alt="图 1：客服对话首页与 3 分钟演示路线" src="submission-assets/01-chat-home.png"></p>
+<p>打开 <code>http://localhost:3000</code>（<code>/</code> 自动跳 <code>/chat</code>），按"客服对话 → 售前咨询 → 查订单 → 售后受阻 → 投诉升级 → 切到商家知识库后台改一条政策 → 回客户对话看新回答"的顺序即可完成演示。</p>
+<p><img alt="图 1：客服对话首页与 三条高频任务" src="submission-assets/01-chat-home.png"></p>
 <p><img alt="图 2：售前咨询，Agent 推荐商品并带 [1] 引用" src="submission-assets/02-presales.png"></p>
 <h2>二、项目亮点</h2>
 <ol>
 <li>
 <p><strong>不是只会聊天的问答工具，而是能办事的客服</strong><br>
-   查订单、查物流、退款、改地址、拦截物流、退换货都在同一个对话里完成，用户不用在"问"和"做"之间切换系统。</p>
+   查订单、查物流、诊断退款受阻、改地址、拦截物流、退换货都在同一个对话里推进，用户不用在"问"和"做"之间切换系统。</p>
 </li>
 <li>
 <p><strong>LangGraph 多 Agent 路由，不是所有问题都走向量检索</strong><br>
@@ -86,11 +86,11 @@ npm run dev
    LangGraph 编排，每个 specialist 内部最多 5 步工具调用；「多 Agent 处理过程」面板把专家接手、handoff、工具名与关键返回字段、终审裁决逐步摊开。主链路 7 个客服工具（<code>kb_search</code> 售前售后共用，按工具位算 8 个），另有 3 个运营向工具经 MCP 暴露（MCP 共 4 个）。</p>
 </li>
 <li>
-<p><strong>敏感操作两段式门控</strong><br>
-   退款、改地址、物流拦截、退换货统一走 <code>validate → 用户确认 → execute</code>。模型不能直接动钱；校验不通过时直接列出原因，例如"退款金额 418 超过实付 159.8"。</p>
+<p><strong>退款只读预检，办理类两段式门控</strong><br>
+   退款不执行，只做资格预检与受阻诊断，引导客户去平台订单页自助申请；改地址、物流拦截、退换货走 <code>validate → 用户确认 → execute</code>。模型不能直接动钱；校验不通过时直接列出原因，例如"退款金额 418 超过实付 159.8"。</p>
 </li>
 <li>
-<p><strong>知识库编辑即生效</strong><br>
+<p><strong>商家知识库编辑即生效</strong><br>
    修改切片后重新嵌入，旧检索立即失效，下一次提问就能看到新口径，不需要重启服务。</p>
 </li>
 <li>
@@ -103,7 +103,6 @@ npm run dev
 </li>
 </ol>
 <p><img alt="图 3：查订单，订单卡与多 Agent 面板展示工具轨迹" src="submission-assets/03-order.png"></p>
-<p><img alt="图 4：退款校验，预览金额与剩余额度，等待客户确认" src="submission-assets/04-refund.png"></p>
 <h2>三、AI 测试技术落地使用情况概述</h2>
 <p>项目把 AI 能力拆成可复现的测试对象，不只靠人工点页面：</p>
 <table>
@@ -151,8 +150,8 @@ npm run dev
 <p>另外还覆盖了：</p>
 <ul>
 <li>意图路由：4 类意图 + 5 类情绪标签；LLM 失败或非法输出时降级为 <code>clarify</code>，先追问再分流，不阻断对话。</li>
-<li>Agent 工具调用：<code>product_lookup</code>、<code>order_lookup</code>、<code>kb_search</code>、<code>refund_flow validate/execute</code> 等。</li>
-<li>退款门控：校验失败、重复提交、幂等执行。</li>
+<li>Agent 工具调用：<code>product_lookup</code>、<code>order_lookup</code>、<code>kb_search</code>、<code>refund_flow validate</code>（只读预检）等。</li>
+<li>退款预检：金额超限、超售后期、已退款等拒绝原因；退款执行已停用。</li>
 <li>终审防幻觉：无工具证据拒答、有命中但缺 <code>[n]</code> 告警、追问式回复不误伤。</li>
 <li>缺 Key / 缺知识库 / 上游 503 的降级路径。</li>
 <li>会话持久化（SqliteSaver 跨实例读取）、引用角标与 <code>/v1/rag/search</code> 同源核对。</li>
@@ -163,7 +162,7 @@ python -m backend.app.rag.selftest
 python -m backend.app.rag.eval
 python -m backend.app.rag.eval_v2
 </code></pre>
-<p><img alt="图 5：投诉升级，生成工单号、类别与紧急度" src="submission-assets/05-escalation.png"></p>
+<p><img alt="图 4：投诉升级，生成工单号、类别与紧急度" src="submission-assets/05-escalation.png"></p>
 <h2>四、项目中涉及的关键技术</h2>
 <ul>
 <li><strong>前端</strong>：Next.js 16 App Router、TypeScript strict、Tailwind CSS、SSE 流式渲染（自研 <code>agentRun</code> 解析 step / delta / done 事件）。</li>
@@ -175,16 +174,16 @@ python -m backend.app.rag.eval_v2
 <li><strong>安全</strong>：前端不直连模型；Key 只在 Python 层；同源 <code>/api/*</code> 代理；<code>.env</code> 不入库。</li>
 <li><strong>测试</strong>：<code>smoke.mjs</code>、RAG selftest、v1/v2 评测集、意图与门控回归脚本。</li>
 </ul>
-<p><img alt="图 6：知识库切片编辑，保存后即时生效" src="submission-assets/06-kb.png"></p>
+<p><img alt="图 5：知识库切片编辑，保存后即时生效" src="submission-assets/06-kb.png"></p>
 <h2>五、项目相关的图片/照片</h2>
-<p>本文档使用 6 张真实运行截图：</p>
+<p>本文档使用 5 张真实运行截图：</p>
 <ol>
-<li>客服对话首页：3 分钟演示路线、能力卡与输入区（图 1）。</li>
+<li>客服对话首页：三条高频任务、能力卡与输入区（图 1）。</li>
 <li>售前咨询：Agent 推荐商品，回答带 <code>[1]</code> 引用（图 2）。</li>
 <li>查订单：订单卡与「order_lookup」工具轨迹（图 3）。</li>
-<li>退款门控：校验预览、金额与剩余额度（图 4）。</li>
-<li>投诉升级：工单号、类别、紧急度（图 5）。</li>
-<li>知识库：切片编辑与即时生效（图 6）。</li>
+<li>售后受阻：订单卡、售后状态与 <code>[1]</code> 引用（见演示视频）。</li>
+<li>投诉升级：工单号、类别、紧急度（图 4）。</li>
+<li>知识库：切片编辑与即时生效（图 5）。</li>
 </ol>
 <p>截图均来自本地演示数据，不含真实客户信息、API Key 或 <code>.env</code> 内容。</p>
 <h2>六、项目之前是否发表过或获奖</h2>
